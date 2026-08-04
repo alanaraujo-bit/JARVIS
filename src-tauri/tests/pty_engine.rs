@@ -365,6 +365,20 @@ fn kill_encerra_o_processo_mas_preserva_a_sessao_para_leitura() {
     assert!(m.snapshot(&info.id).is_ok());
 }
 
+#[test]
+fn resize_em_sessao_morta_e_recusado() {
+    // O master sobrevive ao kill de propósito (leitura pós-morte), mas
+    // redimensioná-lo faria SessionInfo contar uma história que não
+    // aconteceu: nenhum processo do outro lado ocupa esse espaço.
+    let (m, rec) = manager();
+    let info = m.spawn(opts("cmd.exe", &["/c", "exit", "0"])).expect("spawn");
+    assert!(wait_until(Duration::from_secs(10), || rec
+        .exit_code(&info.id)
+        .is_some()));
+
+    assert!(m.resize(&info.id, "painel-1", 100, 40).is_err());
+}
+
 /* ------------------------------ tamanho real ---------------------------- */
 
 #[test]

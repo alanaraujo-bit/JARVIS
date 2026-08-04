@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { TerminalView } from "./components/TerminalView";
 import {
@@ -24,10 +24,20 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [home, setHome] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  // Guarda a reconciliação para rodar uma única vez por vida de página. Sem
+  // isso, o StrictMode (mount → unmount → mount em desenvolvimento) dispara
+  // duas cadeias assíncronas de reset_views concorrentes; se a segunda
+  // aterrissar depois que um painel da primeira já se registrou, ela apaga
+  // um painel vivo — reintroduzindo o mesmo problema que reset_views existe
+  // para resolver, por outra porta.
+  const reconciledRef = useRef(false);
 
   useEffect(() => {
     void shellsDetect().then(setProfiles).catch((e) => setError(String(e)));
     void appHomeDir().then(setHome).catch(() => {});
+
+    if (reconciledRef.current) return;
+    reconciledRef.current = true;
 
     // O dono das sessões é o backend, não este `useState`. Um F5, o HMR do
     // Vite ou uma recuperação de crash do WebView zerariam a lista aqui
@@ -119,6 +129,14 @@ export default function App() {
             onClick={() => setActiveId(s.id)}
           >
             <span className="dot" />
+            {!s.jobbed && (
+              <span
+                className="warn"
+                title="Não foi possível conter esta sessão num Job Object: processos filhos podem sobreviver ao fechamento da aba."
+              >
+                ⚠
+              </span>
+            )}
             <span className="label">{s.title}</span>
             <button
               className="x"

@@ -29,6 +29,10 @@ export interface SessionInfo {
   exitCode: number | null;
   bytesOut: number;
   bytesIn: number;
+  /** Se a árvore de processos foi presa a um Job Object do Windows. Quando
+   * `false`, fechar a aba mata só o shell direto — filhos que ele lançar
+   * (ex.: `npm run dev`) podem sobreviver como órfãos. */
+  jobbed: boolean;
 }
 
 export interface ExitEvent {

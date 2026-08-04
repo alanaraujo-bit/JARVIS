@@ -262,6 +262,13 @@ impl Session {
     }
 
     fn apply_size(&self, cols: u16, rows: u16) -> Result<()> {
+        // Redimensionar uma sessão morta atualizaria `info.cols/rows` sem
+        // nenhum processo do outro lado para de fato ocupar esse espaço —
+        // o `SessionInfo` passaria a contar uma história que não aconteceu.
+        // Mesma postura que `write` já tem para sessão morta.
+        if !self.info.lock().alive {
+            return Err(JarvisError::SessionDead(self.info.lock().id.clone()));
+        }
         let size = PtySize {
             rows: rows.max(1),
             cols: cols.max(1),
@@ -271,7 +278,7 @@ impl Session {
         let guard = self.master.lock();
         let m = guard
             .as_ref()
-            .ok_or_else(|| JarvisError::SessionDead(String::new()))?;
+            .ok_or_else(|| JarvisError::SessionDead(self.info.lock().id.clone()))?;
         m.resize(size)
             .map_err(|e| JarvisError::Resize(e.to_string()))?;
         drop(guard);
