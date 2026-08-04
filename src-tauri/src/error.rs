@@ -27,6 +27,15 @@ pub enum JarvisError {
 
     #[error("erro de E/S: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("erro de configuração: {0}")]
+    ConfigIo(String),
+
+    #[error("erro na requisição de IA: {0}")]
+    AiRequest(String),
+
+    #[error("erro do provedor de IA: {0}")]
+    AiProvider(String),
 }
 
 impl Serialize for JarvisError {

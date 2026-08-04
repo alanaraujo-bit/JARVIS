@@ -7,8 +7,13 @@
   --text-dim: #8b94a7;
   --accent: #5eead4;
   --danger: #f87171;
+  --warn: #fbbf24;
   --ok: #4ade80;
   --radius: 8px;
+  --ws-color: var(--accent);
+  /* Sidebar e painel IA */
+  --sidebar-width: 220px;
+  --ai-panel-width: 340px;
   color-scheme: dark;
 }
 
@@ -39,19 +44,57 @@ body {
   height: 100%;
 }
 
+/* =============================== topbar ================================ */
+
 .topbar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 12px;
+  gap: 10px;
+  padding: 0 8px;
   background: var(--bg-alt);
   border-bottom: 1px solid var(--border);
+}
+
+.topbar-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.topbar-btn:hover {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.ai-toggle {
+  margin-left: auto;
+  font-size: 18px;
+}
+
+.ai-toggle.active {
+  color: var(--accent);
+  text-shadow: 0 0 8px var(--accent);
 }
 
 .brand {
   font-weight: 700;
   letter-spacing: 0.14em;
   color: var(--accent);
+}
+
+.ws-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #0b0d12;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .launchers {
@@ -69,12 +112,15 @@ body {
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
+  transition: all 0.15s;
 }
 
 .chip:hover {
   color: var(--text);
   border-color: var(--accent);
 }
+
+/* ================================ tabs ================================= */
 
 .tabs {
   display: flex;
@@ -97,12 +143,13 @@ body {
   color: var(--text-dim);
   cursor: pointer;
   border-bottom: 2px solid transparent;
+  transition: all 0.15s;
 }
 
 .tab.active {
   color: var(--text);
   background: var(--bg);
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--ws-color, var(--accent));
 }
 
 .tab .dot {
@@ -117,11 +164,8 @@ body {
   background: var(--danger);
 }
 
-.tab .warn {
-  color: var(--warn);
-  font-size: 11px;
-  flex: none;
-  cursor: help;
+.tab.partial .dot {
+  background: var(--warn);
 }
 
 .tab .label {
@@ -129,6 +173,17 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tab-rename {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font: inherit;
 }
 
 .tab .x {
@@ -145,9 +200,27 @@ body {
   opacity: 0.7;
 }
 
+.pane-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* ============================= body row ================================ */
+
+.body-row {
+  display: flex;
+  min-height: 0;
+  position: relative;
+}
+
+/* ============================== stage ================================== */
+
 .stage {
   position: relative;
   min-height: 0;
+  flex: 1;
+  min-width: 0;
   background: var(--bg);
 }
 
@@ -167,6 +240,8 @@ body {
   user-select: text;
 }
 
+/* ============================== empty ================================== */
+
 .empty {
   display: grid;
   place-content: center;
@@ -181,6 +256,10 @@ body {
   margin: 0 0 8px;
 }
 
+.empty-action {
+  margin-top: 16px;
+}
+
 .error {
   margin: 12px;
   padding: 10px 12px;
@@ -191,6 +270,791 @@ body {
   user-select: text;
 }
 
+/* ================================ splits ================================ */
+
+.split-branch {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.split-branch.row {
+  flex-direction: row;
+}
+
+.split-branch.column {
+  flex-direction: column;
+}
+
+.split-slot {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.split-divider {
+  flex: none;
+  background: var(--border);
+  z-index: 2;
+  transition: background 0.15s;
+}
+
+.split-divider.row {
+  width: 5px;
+  cursor: col-resize;
+  margin: 0 -1px;
+}
+
+.split-divider.column {
+  height: 5px;
+  cursor: row-resize;
+  margin: -1px 0;
+}
+
+.split-divider:hover,
+.split-divider:active {
+  background: var(--accent);
+}
+
+.split-leaf {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.split-leaf.focused {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.pane-warn {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 3;
+  color: var(--warn);
+  font-size: 12px;
+  cursor: help;
+  background: var(--bg-alt);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.pane-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 3;
+  background: var(--bg-alt);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.split-leaf:hover .pane-close {
+  opacity: 1;
+}
+
+.pane-close:hover {
+  color: var(--text);
+  border-color: var(--danger);
+}
+
+.pane-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #0b0d12cc;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: center;
+}
+
+.pane-overlay-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pane-overlay-actions button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.pane-overlay-actions button:hover {
+  border-color: var(--accent);
+}
+
+/* ========================= workspace sidebar =========================== */
+
+.ws-sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  background: var(--bg-alt);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideInLeft 0.2s ease-out;
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.ws-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ws-sidebar-title {
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.ws-add-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  transition: all 0.15s;
+}
+
+.ws-add-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+.ws-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.ws-empty {
+  padding: 20px 12px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ws-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s;
+}
+
+.ws-item:hover {
+  background: var(--surface);
+}
+
+.ws-item.active {
+  background: var(--surface);
+  border-left: 3px solid var(--ws-color, var(--accent));
+  padding-left: 9px;
+}
+
+.ws-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.ws-color-dot:hover {
+  transform: scale(1.3);
+}
+
+.ws-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-path {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-rename-input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.ws-remove-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.ws-item:hover .ws-remove-btn {
+  opacity: 0.6;
+}
+
+.ws-remove-btn:hover {
+  color: var(--danger);
+  opacity: 1 !important;
+}
+
+.ws-color-picker {
+  position: absolute;
+  left: 12px;
+  top: 100%;
+  z-index: 10;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px #00000060;
+}
+
+.ws-color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.ws-color-swatch:hover {
+  transform: scale(1.2);
+}
+
+.ws-color-swatch.selected {
+  border-color: var(--text);
+}
+
+.ws-sidebar-footer {
+  border-top: 1px solid var(--border);
+  padding: 8px;
+}
+
+.ws-free-btn {
+  width: 100%;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.ws-free-btn:hover {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.ws-free-btn.active {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* ============================= AI panel ================================ */
+
+.ai-panel {
+  width: var(--ai-panel-width);
+  min-width: var(--ai-panel-width);
+  background: var(--bg-alt);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideInRight 0.2s ease-out;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-panel-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-icon {
+  font-size: 16px;
+  animation: glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+  from { text-shadow: 0 0 4px var(--accent); }
+  to { text-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent); }
+}
+
+.ai-panel-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ai-header-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.ai-header-btn:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+/* ------------- mensagens ------------- */
+
+.ai-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-welcome {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--text-dim);
+}
+
+.ai-welcome-icon {
+  font-size: 36px;
+  color: var(--accent);
+  margin-bottom: 12px;
+  animation: glow 2s ease-in-out infinite alternate;
+}
+
+.ai-welcome h3 {
+  color: var(--accent);
+  margin: 0 0 8px;
+  letter-spacing: 0.1em;
+}
+
+.ai-welcome p {
+  margin: 0 0 4px;
+}
+
+.ai-welcome-hint {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.ai-msg {
+  display: flex;
+  gap: 8px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ai-msg-avatar {
+  font-size: 16px;
+  flex: none;
+  width: 24px;
+  text-align: center;
+}
+
+.ai-msg-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-msg-user .ai-msg-body {
+  background: var(--surface);
+  border-radius: 8px 8px 8px 2px;
+  padding: 8px 10px;
+}
+
+.ai-msg-assistant .ai-msg-body {
+  padding: 4px 0;
+}
+
+.ai-msg-content {
+  font-size: 13px;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+.ai-typing {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.ai-dots {
+  animation: blink 1.2s infinite;
+}
+
+@keyframes blink {
+  0%, 20% { opacity: 1; }
+  50% { opacity: 0.3; }
+  80%, 100% { opacity: 1; }
+}
+
+.ai-cursor {
+  color: var(--accent);
+  animation: cursorBlink 0.8s infinite;
+}
+
+@keyframes cursorBlink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* ------------- code blocks ------------- */
+
+.ai-code-block {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ai-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-code-lang {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ai-code-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ai-code-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: all 0.15s;
+}
+
+.ai-code-btn:hover {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.ai-code-run {
+  color: var(--ok);
+}
+
+.ai-code-run:hover {
+  color: #fff;
+  background: var(--ok);
+}
+
+.ai-code-pre {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg);
+  overflow-x: auto;
+  font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+/* ------------- input ------------- */
+
+.ai-input-area {
+  border-top: 1px solid var(--border);
+  padding: 8px;
+}
+
+.ai-cancel-btn {
+  width: 100%;
+  background: var(--surface);
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  margin-bottom: 6px;
+  transition: all 0.15s;
+}
+
+.ai-cancel-btn:hover {
+  background: var(--warn);
+  color: var(--bg);
+}
+
+.ai-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.ai-input {
+  flex: 1;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  resize: none;
+  outline: none;
+  min-height: 36px;
+  max-height: 120px;
+  transition: border-color 0.15s;
+}
+
+.ai-input:focus {
+  border-color: var(--accent);
+}
+
+.ai-input::placeholder {
+  color: var(--text-dim);
+}
+
+.ai-send-btn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  flex: none;
+  transition: all 0.15s;
+}
+
+.ai-send-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.ai-send-btn:not(:disabled):hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 12px var(--accent);
+}
+
+/* ------------- settings ------------- */
+
+.ai-settings {
+  border-bottom: 1px solid var(--border);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.ai-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-settings-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.ai-settings-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ai-field-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ai-field-select,
+.ai-field-input {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.ai-field-select:focus,
+.ai-field-input:focus {
+  border-color: var(--accent);
+}
+
+.ai-field-range {
+  accent-color: var(--accent);
+}
+
+.ai-field-combo {
+  position: relative;
+}
+
+.ai-test-result {
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.ai-settings-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.ai-settings-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ai-settings-btn.secondary {
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.ai-settings-btn.secondary:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.ai-settings-btn.primary {
+  background: var(--accent);
+  color: var(--bg);
+  border: 1px solid var(--accent);
+  font-weight: 600;
+}
+
+.ai-settings-btn.primary:hover {
+  box-shadow: 0 0 12px var(--accent);
+}
+
+.ai-settings-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================ scrollbars ================================ */
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -199,4 +1063,592 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 6px;
+}
+
+.ai-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ws-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+/* ========================== paleta de comandos ========================= */
+
+/* As duas sobreposições compartilham o mesmo backdrop: escurece o app e
+   captura o clique fora para fechar. */
+.palette-backdrop,
+.stats-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(4, 6, 10, 0.6);
+  backdrop-filter: blur(2px);
+  display: flex;
+  justify-content: center;
+}
+
+.palette-backdrop {
+  /* Alinhada ao topo: a lista cresce para baixo sem a caixa "pular" de
+     posição a cada tecla digitada. */
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+.palette {
+  width: min(560px, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.palette-input {
+  width: 100%;
+  padding: 13px 15px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.palette-input::placeholder {
+  color: var(--text-dim);
+}
+
+.palette-list {
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 15px;
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.palette-item.selected {
+  background: rgba(94, 234, 212, 0.09);
+  border-left-color: var(--accent);
+}
+
+.palette-group {
+  flex: none;
+  width: 84px;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-hit {
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.palette-shortcut {
+  flex: none;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-alt);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.palette-empty,
+.stats-empty {
+  padding: 18px 15px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* ========================== estatísticas de uso ======================== */
+
+.stats-backdrop {
+  align-items: center;
+}
+
+.stats {
+  width: min(620px, 92vw);
+  max-height: 84vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+
+.stats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.stats-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stats-close:hover {
+  color: var(--text);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+
+.stats-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.stats-card-value {
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-card-label {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.stats-section {
+  padding: 0 16px 8px;
+}
+
+.stats-section h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stats-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.stats-bar-label {
+  flex: none;
+  width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-bar-track {
+  flex: 1;
+  height: 7px;
+  background: var(--bg-alt);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.stats-bar-fill {
+  height: 100%;
+  background: var(--ws-color);
+  border-radius: 4px;
+  transition: width 0.2s ease;
+}
+
+.stats-bar-value {
+  flex: none;
+  min-width: 96px;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-note {
+  margin: 0;
+  padding: 4px 16px 16px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.ai-header-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ============================ layout estreito =========================== */
+
+/* A topbar é uma linha flex sem quebra: sem contenção, os chips de shell e
+   o nome do workspace empurram a largura do documento inteiro e a janela
+   passa a rolar na horizontal — levando junto os botões da direita para
+   fora da tela. Cada grupo precisa poder encolher. */
+.topbar {
+  min-width: 0;
+}
+
+.launchers {
+  min-width: 0;
+  overflow: hidden;
+  flex-shrink: 1;
+}
+
+.pane-actions {
+  flex-shrink: 0;
+}
+
+.topbar-btn {
+  flex-shrink: 0;
+}
+
+/* Um workspace com nome longo comia um terço da topbar. */
+.ws-badge {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.brand {
+  flex-shrink: 0;
+}
+
+/* Em janelas estreitas os painéis laterais deixam de disputar espaço com o
+   terminal e passam a flutuar por cima dele. Antes disso, a soma das
+   larguras fixas (220 + 340) tomava a tela toda e o terminal ficava com
+   ~200px, quebrando palavras no meio. */
+@media (max-width: 1100px) {
+  :root {
+    --ai-panel-width: 300px;
+  }
+}
+
+@media (max-width: 900px) {
+  .ws-sidebar,
+  .ai-panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 30;
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.5);
+  }
+
+  .ws-sidebar {
+    left: 0;
+  }
+
+  .ai-panel {
+    right: 0;
+  }
+}
+
+/* Abaixo disto os dois ocupam a largura toda: dividir 640px entre terminal
+   e painel não serve para nenhum dos dois. */
+@media (max-width: 640px) {
+  .ws-sidebar,
+  .ai-panel {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Campo "Modelo" ficava ~160px mais curto que os demais: o wrapper do
+   combobox não esticava, criando um degrau no meio do formulário. */
+.ai-field-combo {
+  display: flex;
+  width: 100%;
+}
+
+.ai-field-combo .ai-field-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-field-hint {
+  padding: 6px 0 0;
+  color: var(--warn);
+  font-size: 11px;
+}
+
+/* A mini-paleta flutua sobre a lista em vez de empurrar o item seguinte. */
+.ws-color-picker {
+  z-index: 5;
+}
+
+/* Um workspace no fim da lista abriria a paleta por cima do rodapé; o
+   ajuste para cima mantém tudo dentro da barra. */
+.ws-list .ws-item:last-child:not(:first-child) .ws-color-picker {
+  top: auto;
+  bottom: 100%;
+}
+
+.ws-color-dot {
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.ws-item-confirm {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  background: var(--surface);
+  cursor: default;
+}
+
+.ws-confirm-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  white-space: normal;
+}
+
+.ws-confirm-note {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.ws-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.ws-confirm-actions button {
+  padding: 4px 10px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ws-confirm-actions button:hover {
+  border-color: var(--accent);
+}
+
+.ws-confirm-actions button.danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* O painel focado era um contorno de 1px sobre fundo quase preto —
+   praticamente invisível com três painéis abertos. */
+.split-leaf.focused {
+  outline: 2px solid var(--ws-color);
+  outline-offset: -2px;
+}
+
+/* O botão de fechar painel só aparecia no hover: indescobrível. Agora fica
+   discreto e ganha destaque ao aproximar o mouse. */
+.split-leaf .pane-close {
+  opacity: 0.25;
+}
+
+.split-leaf:hover .pane-close,
+.split-leaf .pane-close:focus-visible {
+  opacity: 1;
+}
+
+.ai-panel-sub {
+  margin-left: 8px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.ai-msg-note {
+  margin-top: 6px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.ai-msg-error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 6px;
+}
+
+.ai-msg-error-text {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.ai-msg-retry {
+  align-self: flex-start;
+  padding: 3px 10px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ai-msg-retry:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.ai-msg-retry:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ============================ busca no terminal ========================= */
+
+.term-wrap {
+  position: relative;
+  height: 100%;
+}
+
+.term-search {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.term-search-input {
+  width: 180px;
+  padding: 3px 6px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.term-search-input:focus {
+  border-color: var(--accent);
+}
+
+.term-search-btn {
+  padding: 2px 7px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.term-search-btn:hover {
+  background: var(--bg-alt);
+  color: var(--text);
+}
+
+.empty-hints {
+  display: flex;
+  gap: 18px;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.empty-hints kbd {
+  padding: 2px 6px;
+  margin-right: 5px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 10px;
+}
+
+/* A altura máxima era arbitrária e cortava um item ao meio, o que parece
+   defeito de renderização em vez de rolagem. Um múltiplo da altura de linha
+   (35px) deixa o corte cair sempre entre dois itens. */
+.palette-list {
+  max-height: 350px;
+}
+
+/* Nada pode pintar fora da área principal. Sem isto, a animação de entrada
+   dos painéis (que começa deslocada em 100%) estende a largura do documento
+   e o conteúdo transborda a janela por um instante. */
+.body-row {
+  overflow: hidden;
+}
+
+/* O botão de remover ficava invisível até o hover — indescobrível, e
+   inalcançável por teclado. Discreto é suficiente. */
+.ws-remove-btn {
+  opacity: 0.35;
+}
+
+.ws-item:hover .ws-remove-btn,
+.ws-remove-btn:focus-visible {
+  opacity: 1;
 }

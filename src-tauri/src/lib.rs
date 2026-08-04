@@ -1,4 +1,6 @@
+pub mod ai;
 pub mod commands;
+pub mod config;
 pub mod error;
 pub mod job;
 pub mod protocol;
@@ -20,6 +22,15 @@ pub fn run() {
             let manager = PtyManager::new(Arc::new(TauriSink::new(app.handle().clone())));
             manager.start_dispatcher();
             app.manage(manager);
+
+            let config_mgr = crate::config::ConfigManager::new();
+            app.manage(config_mgr);
+
+            let ai_mgr = crate::ai::AiManager::new();
+            app.manage(ai_mgr);
+
+            app.manage(crate::commands::CancelMap::default());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -34,6 +45,12 @@ pub fn run() {
             commands::pty_list,
             commands::shells_detect,
             commands::app_home_dir,
+            commands::config_load,
+            commands::config_save,
+            commands::open_folder_dialog,
+            commands::ai_chat,
+            commands::ai_cancel,
+            commands::ai_models,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::Destroyed = event {

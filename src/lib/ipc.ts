@@ -170,3 +170,118 @@ export function onPtyData(
 export function onPtyExit(cb: (e: ExitEvent) => void): Promise<UnlistenFn> {
   return listen<ExitEvent>(EV_EXIT, (e) => cb(e.payload));
 }
+
+/* ----------------------------- config ---------------------------------- */
+
+/** Espelho de `AiConfig` em `src-tauri/src/config.rs`. */
+export interface AiConfigPayload {
+  provider: "ollama" | "openai" | "anthropic" | "gemini";
+  endpoint: string;
+  apiKey: string;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+}
+
+export interface WorkspaceConfigPayload {
+  id: string;
+  name: string;
+  path: string;
+  color: string;
+  defaultProfileId: string | null;
+  createdAt: number;
+}
+
+export interface UiConfigPayload {
+  sidebarOpen: boolean;
+  aiPanelOpen: boolean;
+}
+
+export interface AppConfig {
+  workspaces: WorkspaceConfigPayload[];
+  activeWorkspaceId: string | null;
+  ai: AiConfigPayload;
+  ui: UiConfigPayload;
+  /**
+   * Arranjo de abas e divisões. O backend guarda como JSON opaco — a forma
+   * pertence ao front (veja `src/lib/restoreLayout.ts`), que valida o que
+   * lê em vez de confiar no tipo.
+   */
+  layout?: unknown;
+}
+
+/**
+ * Fatia parcial do config. Cada tela salva só o que ela é dona — mandar o
+ * documento inteiro faria o último a gravar apagar a mudança da outra tela.
+ * Omitir um campo preserva o valor guardado; mandar `activeWorkspaceId: null`
+ * é um pedido explícito de modo livre.
+ */
+export type ConfigPatch = Partial<Omit<AppConfig, "ui">> & {
+  /** `ui` também é mesclado campo a campo: a barra lateral é dona de
+   * `sidebarOpen` e o painel de IA é dono de `aiPanelOpen`. */
+  ui?: Partial<UiConfigPayload>;
+};
+
+export const configLoad = () => invoke<AppConfig>("config_load");
+
+export const configSave = (patch: ConfigPatch) =>
+  invoke<AppConfig>("config_save", { patch });
+
+/* ----------------------------- diálogo --------------------------------- */
+
+export const openFolderDialog = () =>
+  invoke<string | null>("open_folder_dialog");
+
+/* ------------------------------- IA ------------------------------------ */
+
+export interface AiChatRequest {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+export interface AiContextPayload {
+  workspacePath: string | null;
+  shellName: string | null;
+  os: string;
+  terminalLines: string | null;
+}
+
+export interface AiChunkEvent {
+  requestId: string;
+  text: string;
+}
+
+export interface AiErrorEvent {
+  requestId: string;
+  error: string;
+}
+
+/**
+ * O `requestId` é gerado aqui no front, de propósito. Os eventos de
+ * streaming são nomeados por id; se o id só existisse depois do `invoke`
+ * resolver, não haveria como assinar os eventos antes da geração começar —
+ * e um Ollama local emite os primeiros tokens em milissegundos. Gerando o id
+ * antes, o painel assina primeiro e dispara depois.
+ */
+export const aiChat = (req: {
+  requestId: string;
+  messages: AiChatRequest[];
+  context: AiContextPayload;
+  systemPrompt?: string;
+  config?: AiConfigPayload;
+}) => invoke<void>("ai_chat", req);
+
+export const aiCancel = (requestId: string) =>
+  invoke<void>("ai_cancel", { requestId });
+
+export const aiModels = (config?: AiConfigPayload) =>
+  invoke<string[]>("ai_models", { config });
+
+export const onAiChunk = (requestId: string, cb: (text: string) => void) =>
+  listen<AiChunkEvent>(`ai:chunk:${requestId}`, (e) => cb(e.payload.text));
+
+export const onAiDone = (requestId: string, cb: () => void) =>
+  listen<unknown>(`ai:done:${requestId}`, () => cb());
+
+export const onAiError = (requestId: string, cb: (error: string) => void) =>
+  listen<AiErrorEvent>(`ai:error:${requestId}`, (e) => cb(e.payload.error));

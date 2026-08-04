@@ -128,3 +128,43 @@ pub struct ShellProfile {
     /// Perfil sugerido como padrão (melhor shell disponível).
     pub recommended: bool,
 }
+
+pub const EV_AI_CHUNK: &str = "ai:chunk";
+pub const EV_AI_DONE: &str = "ai:done";
+pub const EV_AI_ERROR: &str = "ai:error";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiContext {
+    pub workspace_path: Option<String>,
+    pub shell_name: Option<String>,
+    pub os: String,
+    pub terminal_lines: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiChunkEvent {
+    pub request_id: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiDoneEvent {
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiErrorEvent {
+    pub request_id: String,
+    pub error: String,
+}

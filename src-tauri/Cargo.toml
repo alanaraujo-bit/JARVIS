@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "jarvis"
 version = "0.1.0"
 description = "JARVIS - central de terminais e agentes de IA para Windows"
@@ -25,6 +25,14 @@ uuid = { version = "1", features = ["v4"] }
 thiserror = "2"
 dirs = "6"
 which = "7"
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
+# `time` é necessário para o watchdog de inatividade do streaming de IA:
+# um provedor que aceita a conexão e para de enviar bytes prenderia a
+# geração para sempre, já que o cliente de streaming não pode ter timeout
+# total (uma resposta longa leva minutos por natureza).
+tokio = { version = "1", features = ["sync", "time", "macros"] }
+futures = "0.3"
+rfd = "0.15"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = [

@@ -16,4 +16,10 @@ export default defineConfig({
     sourcemap: true,
     chunkSizeWarningLimit: 1500,
   },
+  test: {
+    // Sem este recorte o vitest também coleta `e2e/`, que é do Playwright, e
+    // `npm test` falha sempre com "Playwright Test did not expect test() to
+    // be called here".
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+  },
 });
