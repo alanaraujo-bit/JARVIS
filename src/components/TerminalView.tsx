@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -25,6 +25,12 @@ interface Props {
 
 let viewSeq = 0;
 
+/** Fallback só para ambientes sem `crypto.randomUUID` (não deveria ocorrer no WebView2). */
+function makeViewId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `view-${Date.now()}-${++viewSeq}`;
+}
+
 /**
  * Um `<TerminalView>` = um painel exibindo uma sessão de PTY. O componente é
  * deliberadamente burro: não guarda estado de aba, só liga o xterm ao canal.
@@ -33,7 +39,13 @@ export function TerminalView({ sessionId, focused = true }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   // Identidade estável do painel, para o backend saber de quem é cada resize.
-  const viewIdRef = useRef<string>(`view-${++viewSeq}`);
+  // `useState` com inicializador preguiçoso: ao contrário do argumento de
+  // `useRef`, que é avaliado (e descartado) em TODO render, o inicializador
+  // de `useState` só roda uma vez. Isso importa de verdade: gerar o id a
+  // partir de um contador global incrementado a cada render tornava os ids
+  // não determinísticos entre recargas, o que escondia — em vez de evitar —
+  // colisões de painel fantasma depois de um F5.
+  const [viewId] = useState(makeViewId);
 
   // Só `sessionId` entra aqui. Qualquer outra dependência faria o xterm ser
   // destruído e recriado — perdendo scrollback, seleção e contexto WebGL — a
@@ -42,7 +54,6 @@ export function TerminalView({ sessionId, focused = true }: Props) {
     const host = hostRef.current;
     if (!host) return;
 
-    const viewId = viewIdRef.current;
     let disposed = false;
     let unlisten: UnlistenFn | null = null;
 
@@ -98,7 +109,19 @@ export function TerminalView({ sessionId, focused = true }: Props) {
       const key = `${term.cols}x${term.rows}`;
       if (key === lastSent) return;
       lastSent = key;
-      void ptyResize(sessionId, viewId, term.cols, term.rows).catch(() => {});
+      void ptyResize(sessionId, viewId, term.cols, term.rows)
+        .then((agreed) => {
+          if (disposed) return;
+          // Com splits, o tamanho aplicado pode ser menor do que o pedido
+          // (outro painel exibindo a mesma sessão). Sem realinhar aqui, o
+          // xterm continuaria desenhando em 200 colunas enquanto o shell
+          // emite pensando que a tela tem 80.
+          if (agreed.cols !== term.cols || agreed.rows !== term.rows) {
+            term.resize(agreed.cols, agreed.rows);
+            lastSent = `${agreed.cols}x${agreed.rows}`;
+          }
+        })
+        .catch(() => {});
     };
 
     const scheduleSync = () => {

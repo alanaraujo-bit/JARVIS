@@ -6,6 +6,7 @@ import {
   onPtyExit,
   ptyClose,
   ptyList,
+  ptyResetViews,
   ptySpawn,
   shellsDetect,
   type SessionInfo,
@@ -33,8 +34,17 @@ export default function App() {
     // enquanto os shells continuam vivos — inalcançáveis, sem aba e sem como
     // fechar. Reconciliar na montagem devolve todos eles.
     void ptyList()
-      .then((existentes) => {
+      .then(async (existentes) => {
         if (existentes.length === 0) return;
+
+        // Toda montagem daqui é, por definição, uma vida nova de página: os
+        // painéis que existiam antes (se houve recarga) nunca rodam o
+        // cleanup do React e ficam presos como "views" fantasma no backend,
+        // prendendo cada sessão no menor tamanho que aquele painel morto
+        // tinha pedido. Isso precisa terminar ANTES de montar os painéis
+        // novos, senão o resize deles chega enquanto o fantasma ainda conta.
+        await Promise.allSettled(existentes.map((s) => ptyResetViews(s.id)));
+
         setSessions(existentes);
         setActiveId((atual) => atual ?? existentes[existentes.length - 1].id);
       })

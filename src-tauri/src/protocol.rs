@@ -65,6 +65,10 @@ pub struct SessionInfo {
     /// no caminho quente e evitam ter que reformar o motor depois.
     pub bytes_out: u64,
     pub bytes_in: u64,
+    /// Se a arvore de processos foi presa a um Job Object do Windows. Quando
+    /// `false`, fechar a aba mata so o shell direto — qualquer filho que ele
+    /// lancar sobrevive como orfao. A UI deve avisar o usuario nesse caso.
+    pub jobbed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,6 +94,15 @@ pub struct DataEvent {
 pub struct Snapshot {
     pub bytes: Vec<u8>,
     pub seq: u64,
+}
+
+/// Tamanho de fato aplicado depois de um pedido de resize — pode ser menor
+/// do que o pedido se outro painel exibindo a mesma sessão pediu menos.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResizeResult {
+    pub cols: u16,
+    pub rows: u16,
 }
 
 /// Versão serializável do instantâneo.

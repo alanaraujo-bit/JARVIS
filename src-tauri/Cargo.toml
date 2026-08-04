@@ -35,7 +35,8 @@ windows-sys = { version = "0.60", features = [
 ] }
 
 [dev-dependencies]
-base64 = "0.22"
+# parking_lot já é dependência normal (motor de PTY); repetida aqui só para
+# deixar explícito que os testes de integração também a usam diretamente.
 parking_lot = "0.12"
 
 [profile.release]

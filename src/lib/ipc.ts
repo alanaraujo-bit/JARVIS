@@ -49,6 +49,11 @@ export interface SnapshotPayload {
   seq: number;
 }
 
+export interface ResizeResult {
+  cols: number;
+  rows: number;
+}
+
 export interface ShellProfile {
   id: string;
   name: string;
@@ -118,10 +123,21 @@ export const ptyResize = (
   viewId: string,
   cols: number,
   rows: number,
-) => invoke<void>("pty_resize", { id, viewId, cols, rows });
+) => invoke<ResizeResult>("pty_resize", { id, viewId, cols, rows });
 
 export const ptyDetachView = (id: string, viewId: string) =>
   invoke<void>("pty_detach_view", { id, viewId });
+
+/**
+ * Esquece todos os painéis registrados para a sessão. Chamar sempre que o
+ * front reconcilia sessões vindas de uma vida nova de página (montagem
+ * inicial, F5, HMR): um painel de antes da recarga nunca roda seu cleanup do
+ * React, então o `viewId` dele fica preso em `views` no backend para sempre —
+ * prendendo o PTY no menor tamanho que ele tinha pedido, sem qualquer forma
+ * de o painel novo se livrar disso, já que nem sabe que o fantasma existe.
+ */
+export const ptyResetViews = (id: string) =>
+  invoke<void>("pty_reset_views", { id });
 
 export const ptyKill = (id: string) => invoke<void>("pty_kill", { id });
 

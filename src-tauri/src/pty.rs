@@ -1,4 +1,4 @@
-﻿use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -12,44 +12,44 @@ use crate::error::{JarvisError, Result};
 use crate::job::Job;
 use crate::protocol::{ExitEvent, SessionInfo, Snapshot, SpawnOptions};
 
-/// SaÃ­da do motor de PTY. O `PtyManager` nÃ£o conhece Tauri: quem entrega os
-/// eventos Ã© injetado. Isso mantÃ©m o nÃºcleo testÃ¡vel sem abrir uma janela.
+/// Saida do motor de PTY. O `PtyManager` nao conhece Tauri: quem entrega os
+/// eventos e injetado. Isso mantem o nucleo testavel sem abrir uma janela.
 pub trait EventSink: Send + Sync + 'static {
-    /// `seq` Ã© a contagem acumulada de bytes da sessÃ£o ao fim deste lote.
-    /// O front usa isso para casar o instantÃ¢neo com o fluxo ao vivo sem
-    /// duplicar nem perder saÃ­da.
+    /// `seq` e a contagem acumulada de bytes da sessao ao fim deste lote.
+    /// O front usa isso para casar o instantaneo com o fluxo ao vivo sem
+    /// duplicar nem perder saida.
     fn data(&self, session_id: &str, bytes: &[u8], seq: u64);
     fn exit(&self, event: ExitEvent);
 }
 
-/// Quanto de saÃ­da guardamos por sessÃ£o para restaurar a tela quando a aba
-/// volta a ser montada. 512 KiB cobre folgado uma tela cheia + histÃ³rico Ãºtil.
+/// Quanto de saida guardamos por sessao para restaurar a tela quando a aba
+/// volta a ser montada. 512 KiB cobre folgado uma tela cheia + historico util.
 const SCROLLBACK_BYTES: usize = 512 * 1024;
 
-/// Teto GLOBAL do que espera o prÃ³ximo flush. Por sessÃ£o, 20 abas barulhentas
-/// multiplicariam o limite por 20; o custo de memÃ³ria tem que ser do app.
+/// Teto GLOBAL do que espera o proximo flush. Por sessao, 20 abas barulhentas
+/// multiplicariam o limite por 20; o custo de memoria tem que ser do app.
 const PENDING_MAX_BYTES: usize = 8 * 1024 * 1024;
 
-/// Intervalo de coalescÃªncia. Emitir a cada leitura do PTY afoga a ponte IPC;
-/// agrupar em ~8ms alinha com o frame do WebView sem latÃªncia perceptÃ­vel.
+/// Intervalo de coalescencia. Emitir a cada leitura do PTY afoga a ponte IPC;
+/// agrupar em ~8ms alinha com o frame do WebView sem latencia perceptivel.
 const FLUSH_INTERVAL: Duration = Duration::from_millis(8);
 
-/// Quanto a thread de espera segura o evento de saÃ­da para as Ãºltimas linhas
+/// Quanto a thread de espera segura o evento de saida para as ultimas linhas
 /// do processo chegarem antes do aviso de que ele morreu.
 const EXIT_DRAIN_TIMEOUT: Duration = Duration::from_millis(400);
 
-/// Device Status Report â€” "informe a posiÃ§Ã£o do cursor".
+/// Device Status Report - "informe a posicao do cursor".
 const DSR_QUERY: &[u8] = b"\x1b[6n";
 
 /// Resposta ao DSR: cursor na origem.
 const DSR_REPLY: &[u8] = b"\x1b[1;1R";
 
-/// O ConPTY Ã© criado com `PSUEDOCONSOLE_INHERIT_CURSOR`: o conhost manda um
-/// DSR e **segura a execuÃ§Ã£o do processo filho** atÃ© receber a resposta.
+/// O ConPTY e criado com `PSUEDOCONSOLE_INHERIT_CURSOR`: o conhost manda um
+/// DSR e **segura a execucao do processo filho** ate receber a resposta.
 /// Deixar isso para o xterm no front custaria centenas de milissegundos de
-/// terminal congelado a cada aba aberta â€” e trava de vez se a aba nascer em
-/// segundo plano. EntÃ£o respondemos aqui e sÃ³ procuramos o DSR nesta janela
-/// inicial, para nÃ£o roubar consultas legÃ­timas de aplicativos.
+/// terminal congelado a cada aba aberta - e trava de vez se a aba nascer em
+/// segundo plano. Entao respondemos aqui e so procuramos o DSR nesta janela
+/// inicial, para nao roubar consultas legitimas de aplicativos.
 const HANDSHAKE_SCAN_BYTES: usize = 8 * 1024;
 
 pub fn now_ms() -> u64 {
@@ -61,9 +61,9 @@ pub fn now_ms() -> u64 {
 
 /* ------------------------------ scrollback ----------------------------- */
 
-/// HistÃ³rico recente + contador acumulado de bytes. Os dois vivem sob o mesmo
-/// lock de propÃ³sito: o instantÃ¢neo precisa do conteÃºdo e da posiÃ§Ã£o no fluxo
-/// capturados no mesmo instante, senÃ£o o front nÃ£o consegue casar os dois.
+/// Historico recente + contador acumulado de bytes. Os dois vivem sob o mesmo
+/// lock de proposito: o instantaneo precisa do conteudo e da posicao no fluxo
+/// capturados no mesmo instante, senao o front nao consegue casar os dois.
 #[derive(Default)]
 pub struct Scrollback {
     buf: VecDeque<u8>,
@@ -96,7 +96,7 @@ impl Scrollback {
 
 /* ------------------------------- handshake ----------------------------- */
 
-/// Estado do handshake inicial do ConPTY, por sessÃ£o.
+/// Estado do handshake inicial do ConPTY, por sessao.
 #[derive(Default)]
 struct Handshake {
     done: bool,
@@ -107,8 +107,8 @@ struct Handshake {
 
 impl Handshake {
     /// Devolve o que deve seguir para o front. Quando encontra o DSR, chama
-    /// `reply` â€” que escreve a resposta â€” e remove a sequÃªncia do fluxo, para
-    /// o terminal do front nÃ£o responder uma segunda vez.
+    /// `reply` - que escreve a resposta - e remove a sequencia do fluxo, para
+    /// o terminal do front nao responder uma segunda vez.
     fn filter(&mut self, chunk: &[u8], reply: impl FnOnce()) -> Vec<u8> {
         if self.done {
             return chunk.to_vec();
@@ -119,7 +119,7 @@ impl Handshake {
         self.scanned += chunk.len();
 
         if let Some(pos) = find(&scan, DSR_QUERY) {
-            // Responder antes de repassar: o processo filho sÃ³ comeÃ§a depois disto.
+            // Responder antes de repassar: o processo filho so comeca depois disto.
             reply();
             scan.drain(pos..pos + DSR_QUERY.len());
             self.done = true;
@@ -127,12 +127,12 @@ impl Handshake {
         }
 
         if self.scanned >= HANDSHAKE_SCAN_BYTES {
-            // Este conhost nÃ£o pede DSR; para de vigiar e deixa tudo passar.
+            // Este conhost nao pede DSR; para de vigiar e deixa tudo passar.
             self.done = true;
             return scan;
         }
 
-        // Segura sÃ³ um sufixo que ainda possa virar `\x1b[6n`.
+        // Segura so um sufixo que ainda possa virar `\x1b[6n`.
         let keep = partial_suffix(&scan, DSR_QUERY);
         if keep > 0 {
             self.carry = scan.split_off(scan.len() - keep);
@@ -140,7 +140,7 @@ impl Handshake {
         scan
     }
 
-    /// Bytes retidos que precisam sair antes do fim do fluxo, senÃ£o a sequÃªncia
+    /// Bytes retidos que precisam sair antes do fim do fluxo, senao a sequencia
     /// chega truncada ao terminal e vira lixo na tela.
     fn flush(&mut self) -> Vec<u8> {
         self.done = true;
@@ -155,7 +155,7 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-/// Comprimento do maior sufixo de `data` que Ã© prefixo prÃ³prio de `needle`.
+/// Comprimento do maior sufixo de `data` que e prefixo proprio de `needle`.
 fn partial_suffix(data: &[u8], needle: &[u8]) -> usize {
     let max = needle.len().min(data.len()).saturating_sub(1);
     (1..=max)
@@ -189,8 +189,8 @@ impl Pending {
         self.trim();
     }
 
-    /// Sob enxurrada (um `cat` de binÃ¡rio), descarta o comeÃ§o do que ainda nÃ£o
-    /// foi entregue: a tela sÃ³ mostra o fim mesmo, e o `seq_end` preservado
+    /// Sob enxurrada (um `cat` de binario), descarta o comeco do que ainda nao
+    /// foi entregue: a tela so mostra o fim mesmo, e o `seq_end` preservado
     /// avisa o front de que houve um salto.
     fn trim(&mut self) {
         while self.total > PENDING_MAX_BYTES {
@@ -220,20 +220,20 @@ impl Pending {
     }
 }
 
-/* -------------------------------- sessÃ£o ------------------------------- */
+/* -------------------------------- sessao ------------------------------- */
 
 struct Session {
     info: Mutex<SessionInfo>,
-    /// `None` depois do fechamento: soltar o master fecha o ConPTY, o que dÃ¡
-    /// EOF Ã  thread de leitura e a encerra.
+    /// `None` depois do fechamento: soltar o master fecha o ConPTY, o que da
+    /// EOF a thread de leitura e a encerra.
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     writer: Mutex<Option<Box<dyn Write + Send>>>,
     killer: Mutex<Box<dyn portable_pty::ChildKiller + Send + Sync>>,
     job: Option<Job>,
     scrollback: Mutex<Scrollback>,
-    /// Tamanho pedido por cada painel que exibe esta sessÃ£o. Com splits, dois
-    /// painÃ©is brigariam pelo resize; vence o menor, que Ã© o Ãºnico tamanho em
-    /// que o conteÃºdo cabe nos dois.
+    /// Tamanho pedido por cada painel que exibe esta sessao. Com splits, dois
+    /// paineis brigariam pelo resize; vence o menor, que e o unico tamanho em
+    /// que o conteudo cabe nos dois.
     views: Mutex<HashMap<String, (u16, u16)>>,
     bytes_out: AtomicU64,
     bytes_in: AtomicU64,
@@ -247,7 +247,13 @@ impl Session {
         }
     }
 
-    /// Menor tamanho entre os painÃ©is abertos, ou `None` se nenhum se declarou.
+    /// Menor tamanho entre os paineis abertos, ou `None` se nenhum se declarou.
+    ///
+    /// `min(cols)` e `min(rows)` sao calculados de forma independente: o
+    /// resultado e o maior retangulo que cabe em todos os paineis
+    /// simultaneamente, nao o tamanho exato de nenhum deles isoladamente.
+    /// E o comportamento certo (senao um painel largo-e-baixo e outro
+    /// estreito-e-alto nunca chegariam a um consenso).
     fn agreed_size(&self) -> Option<(u16, u16)> {
         let views = self.views.lock();
         let cols = views.values().map(|(c, _)| *c).min()?;
@@ -262,10 +268,13 @@ impl Session {
             pixel_width: 0,
             pixel_height: 0,
         };
-        if let Some(m) = self.master.lock().as_ref() {
-            m.resize(size)
-                .map_err(|e| JarvisError::Resize(e.to_string()))?;
-        }
+        let guard = self.master.lock();
+        let m = guard
+            .as_ref()
+            .ok_or_else(|| JarvisError::SessionDead(String::new()))?;
+        m.resize(size)
+            .map_err(|e| JarvisError::Resize(e.to_string()))?;
+        drop(guard);
         let mut info = self.info.lock();
         info.cols = size.cols;
         info.rows = size.rows;
@@ -305,14 +314,14 @@ impl PtyManager {
         }
     }
 
-    /// Sobe a thread que agrupa a saÃ­da dos PTYs e a entrega ao front.
-    /// Dorme em `Condvar`: com zero terminais ativos ela nÃ£o acorda, em vez de
+    /// Sobe a thread que agrupa a saida dos PTYs e a entrega ao front.
+    /// Dorme em `Condvar`: com zero terminais ativos ela nao acorda, em vez de
     /// bater 125 vezes por segundo e impedir os estados de baixo consumo.
     pub fn start_dispatcher(&self) {
         let pending = Arc::clone(&self.pending);
         let sink = Arc::clone(&self.sink);
         let stopping = Arc::clone(&self.stopping);
-        std::thread::Builder::new()
+        let spawned = std::thread::Builder::new()
             .name("jarvis-pty-dispatch".into())
             .spawn(move || {
                 let (lock, cvar) = &*pending;
@@ -335,8 +344,12 @@ impl PtyManager {
                         sink.data(&id, &slot.bytes, slot.seq_end);
                     }
                 }
-            })
-            .expect("thread do dispatcher de PTY");
+            });
+        if let Err(e) = spawned {
+            // Sem o dispatcher nenhuma sessao entrega saida; melhor um log
+            // alto que um `expect` derrubando o processo inteiro na largada.
+            eprintln!("JARVIS: falha ao criar a thread do dispatcher de PTY: {e}");
+        }
     }
 
     pub fn spawn(&self, opts: SpawnOptions) -> Result<SessionInfo> {
@@ -361,7 +374,7 @@ impl PtyManager {
         cmd.args(&opts.args);
         cmd.cwd(&cwd);
         // Sinaliza terminal capaz: sem isso muitas CLIs (inclusive agentes de IA)
-        // caem no modo "dumb" e desligam cor e renderizaÃ§Ã£o interativa.
+        // caem no modo "dumb" e desligam cor e renderizacao interativa.
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         for (k, v) in &opts.env {
@@ -375,15 +388,31 @@ impl PtyManager {
                 program: program.clone(),
                 reason: e.to_string(),
             })?;
-        // O slave precisa ser fechado aqui: enquanto este processo o mantÃ©m
-        // aberto, o master nunca vÃª EOF e a sessÃ£o "trava" apÃ³s o exit.
+        // O slave precisa ser fechado aqui: enquanto este processo o mantem
+        // aberto, o master nunca ve EOF e a sessao "trava" apos o exit.
         drop(pair.slave);
 
         let pid = child.process_id();
-        // Prende a Ã¡rvore: fechar a aba tem que levar junto o que o shell abriu.
+        // Prende a arvore: fechar a aba tem que levar junto o que o shell abriu.
+        // Ha uma janela entre o spawn e este assign em que um neto criado
+        // instantaneamente (ex.: perfil que roda "-c npm run dev" direto)
+        // poderia escapar do job; o portable-pty nao expoe CREATE_SUSPENDED
+        // para eliminar essa janela. Aceito conscientemente: e um shell
+        // interativo esperando prompt na esmagadora maioria dos casos.
         let job = Job::create();
-        if let (Some(job), Some(pid)) = (job.as_ref(), pid) {
-            job.assign(pid);
+        let jobbed = match (job.as_ref(), pid) {
+            (Some(job), Some(pid)) => job.assign(pid),
+            _ => false,
+        };
+        if !jobbed {
+            // Sem o job, TerminateProcess so mata o shell direto: qualquer
+            // processo que ele lancar sobrevive ao close() como orfao. O
+            // usuario precisa poder ver isso, nao so nos logs.
+            eprintln!(
+                "JARVIS: nao foi possivel prender o processo {:?} a um Job Object; \
+                 filhos lancados por esta sessao podem sobreviver ao fechamento da aba",
+                pid
+            );
         }
 
         let reader = pair
@@ -412,6 +441,7 @@ impl PtyManager {
             exit_code: None,
             bytes_out: 0,
             bytes_in: 0,
+            jobbed,
         };
 
         let session = Arc::new(Session {
@@ -472,7 +502,7 @@ impl PtyManager {
                     }
                 }
 
-                // NÃ£o deixa bytes presos no `carry` do handshake.
+                // Nao deixa bytes presos no `carry` do handshake.
                 let tail = handshake.flush();
                 publish(&tail);
                 let _ = done.send(());
@@ -500,8 +530,8 @@ impl PtyManager {
                     info.exit_code = Some(code);
                 }
 
-                // O aviso de saÃ­da nÃ£o pode passar na frente das Ãºltimas linhas
-                // do processo. Espera a leitura terminar e a fila esvaziar â€”
+                // O aviso de saida nao pode passar na frente das ultimas linhas
+                // do processo. Espera a leitura terminar e a fila esvaziar -
                 // com teto, porque um neto vivo segura o PTY aberto para sempre.
                 let deadline = Instant::now() + EXIT_DRAIN_TIMEOUT;
                 let _ = reader_done.recv_timeout(EXIT_DRAIN_TIMEOUT);
@@ -547,16 +577,20 @@ impl PtyManager {
     }
 
     /// Registra o tamanho pedido por um painel e aplica o consenso.
-    pub fn resize(&self, id: &str, view_id: &str, cols: u16, rows: u16) -> Result<()> {
+    /// Devolve o tamanho realmente aplicado: com splits, pode nao ser o
+    /// tamanho que este painel pediu, e o front precisa saber para nao
+    /// desenhar o xterm maior do que o PTY realmente esta.
+    pub fn resize(&self, id: &str, view_id: &str, cols: u16, rows: u16) -> Result<(u16, u16)> {
         let s = self.get(id)?;
         s.views
             .lock()
             .insert(view_id.to_string(), (cols.max(1), rows.max(1)));
         let (c, r) = s.agreed_size().unwrap_or((cols.max(1), rows.max(1)));
-        s.apply_size(c, r)
+        s.apply_size(c, r)?;
+        Ok((c, r))
     }
 
-    /// Um painel deixou de exibir a sessÃ£o: para de considerar o tamanho dele.
+    /// Um painel deixou de exibir a sessao: para de considerar o tamanho dele.
     pub fn detach_view(&self, id: &str, view_id: &str) -> Result<()> {
         let s = self.get(id)?;
         s.views.lock().remove(view_id);
@@ -566,8 +600,20 @@ impl PtyManager {
         Ok(())
     }
 
-    /// Mata a Ã¡rvore de processos, mas mantÃ©m a sessÃ£o na lista para o usuÃ¡rio
-    /// ainda poder ler a saÃ­da do que morreu.
+    /// Esquece todos os paineis registrados para esta sessao. Chamado quando
+    /// o front reconcilia apos uma vida nova de pagina (F5, HMR, recuperacao
+    /// de crash do WebView): sem isso, um painel que existiu antes da recarga
+    /// e nunca chegou a rodar seu cleanup do React ficaria preso em `views`
+    /// para sempre, prendendo a sessao no menor tamanho que ele tinha pedido
+    /// mesmo depois que o painel novo, maior, se registrar.
+    pub fn reset_views(&self, id: &str) -> Result<()> {
+        let s = self.get(id)?;
+        s.views.lock().clear();
+        Ok(())
+    }
+
+    /// Mata a arvore de processos, mas mantem a sessao na lista para o usuario
+    /// ainda poder ler a saida do que morreu.
     pub fn kill(&self, id: &str) -> Result<()> {
         let s = self.get(id)?;
         if let Some(job) = s.job.as_ref() {
@@ -577,7 +623,7 @@ impl PtyManager {
         Ok(())
     }
 
-    /// Remove a sessÃ£o de vez: derruba a Ã¡rvore e fecha o ConPTY para as
+    /// Remove a sessao de vez: derruba a arvore e fecha o ConPTY para as
     /// threads dela terminarem.
     pub fn close(&self, id: &str) -> Result<()> {
         let s = self.sessions.lock().remove(id);
@@ -612,7 +658,7 @@ impl PtyManager {
         out
     }
 
-    /// Tamanho real do PTY, direto do master â€” nÃ£o o espelho em `SessionInfo`.
+    /// Tamanho real do PTY, direto do master - nao o espelho em `SessionInfo`.
     pub fn actual_size(&self, id: &str) -> Result<(u16, u16)> {
         let s = self.get(id)?;
         let guard = s.master.lock();
@@ -625,8 +671,8 @@ impl PtyManager {
         Ok((size.cols, size.rows))
     }
 
-    /// Encerra tudo â€” chamado no fechamento da janela para nÃ£o deixar
-    /// processos Ã³rfÃ£os segurando a pasta de trabalho do usuÃ¡rio.
+    /// Encerra tudo - chamado no fechamento da janela para nao deixar
+    /// processos orfaos segurando a pasta de trabalho do usuario.
     pub fn shutdown(&self) {
         self.stopping.store(true, Ordering::Relaxed);
         self.pending.1.notify_all();
@@ -643,9 +689,9 @@ impl PtyManager {
 
 fn resolve_cwd(requested: Option<&str>) -> Result<String> {
     match requested {
-        // Silenciosamente cair na HOME quando a pasta pedida nÃ£o existe Ã©
-        // perigoso: um agente de IA lanÃ§ado "no projeto" acabaria rodando em
-        // C:\Users\<vocÃª>, e um comando destrutivo dele acertaria o lugar errado.
+        // Silenciosamente cair na HOME quando a pasta pedida nao existe e
+        // perigoso: um agente de IA lancado "no projeto" acabaria rodando em
+        // C:\Users\<voce>, e um comando destrutivo dele acertaria o lugar errado.
         Some(dir) => {
             if std::path::Path::new(dir).is_dir() {
                 Ok(dir.to_string())
@@ -694,8 +740,8 @@ mod tests {
         assert_eq!(out, b"olamundo");
         assert_eq!(replies, 1);
 
-        // Depois do handshake, um DSR legÃ­timo de um aplicativo passa intacto.
-        let out2 = h.filter(b"\x1b[6n", || panic!("nÃ£o deveria responder de novo"));
+        // Depois do handshake, um DSR legitimo de um aplicativo passa intacto.
+        let out2 = h.filter(b"\x1b[6n", || panic!("nao deveria responder de novo"));
         assert_eq!(out2, b"\x1b[6n");
     }
 
@@ -726,7 +772,7 @@ mod tests {
     fn handshake_desiste_depois_da_janela_inicial() {
         let mut h = Handshake::default();
         let ruido = vec![b'x'; HANDSHAKE_SCAN_BYTES + 1];
-        let out = h.filter(&ruido, || panic!("nÃ£o hÃ¡ DSR aqui"));
+        let out = h.filter(&ruido, || panic!("nao ha DSR aqui"));
         assert_eq!(out.len(), ruido.len());
         assert!(h.done);
     }
@@ -737,11 +783,11 @@ mod tests {
         sb.push(&vec![b'a'; SCROLLBACK_BYTES]);
         let total = sb.push(b"fim");
 
-        assert_eq!(sb.len(), SCROLLBACK_BYTES, "o histÃ³rico respeita o teto");
+        assert_eq!(sb.len(), SCROLLBACK_BYTES, "o historico respeita o teto");
         assert_eq!(
             total,
             SCROLLBACK_BYTES as u64 + 3,
-            "o contador acumulado continua contando o que jÃ¡ saiu"
+            "o contador acumulado continua contando o que ja saiu"
         );
 
         let (bytes, seq) = sb.capture();
@@ -762,7 +808,7 @@ mod tests {
             "12 MiB entraram, o buffer ficou em {}",
             p.total
         );
-        // O corte nÃ£o pode apagar a posiÃ§Ã£o no fluxo: Ã© ela que avisa o front
+        // O corte nao pode apagar a posicao no fluxo: e ela que avisa o front
         // de que houve salto.
         assert!(p.queue.values().all(|s| s.seq_end > 0));
     }
@@ -785,7 +831,7 @@ mod tests {
     fn cwd_inexistente_e_erro_em_vez_de_cair_na_home() {
         let err = resolve_cwd(Some(r"C:\pasta-que-nao-existe-jarvis-xyz"));
         assert!(matches!(err, Err(JarvisError::BadCwd(_))));
-        // Sem pedido explÃ­cito, a HOME Ã© o padrÃ£o legÃ­timo.
+        // Sem pedido explicito, a HOME e o padrao legitimo.
         assert!(resolve_cwd(None).is_ok());
     }
 }

@@ -103,13 +103,22 @@ fn opts(program: &str, args: &[&str]) -> SpawnOptions {
     }
 }
 
-/// Pergunta ao Windows se o processo ainda existe.
+/// Pergunta ao Windows se o processo ainda existe. Formato CSV com o campo
+/// de PID comparado por igualdade — não por substring da linha inteira, que
+/// poderia colidir com o valor de outra coluna (ex.: uso de memória).
 fn pid_alive(pid: u32) -> bool {
     let out = std::process::Command::new("tasklist.exe")
-        .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
         .output()
         .expect("tasklist");
-    String::from_utf8_lossy(&out.stdout).contains(&pid.to_string())
+    let texto = String::from_utf8_lossy(&out.stdout);
+    texto.lines().any(|linha| {
+        linha
+            .split(',')
+            .nth(1)
+            .map(|campo| campo.trim_matches('"') == pid.to_string())
+            .unwrap_or(false)
+    })
 }
 
 /* ------------------------------ ciclo de vida --------------------------- */
@@ -363,7 +372,8 @@ fn resize_chega_no_pty_de_verdade() {
     let (m, _rec) = manager();
     let info = m.spawn(opts("cmd.exe", &[])).expect("spawn");
 
-    m.resize(&info.id, "painel-1", 132, 45).expect("resize");
+    let aplicado = m.resize(&info.id, "painel-1", 132, 45).expect("resize");
+    assert_eq!(aplicado, (132, 45), "o tamanho devolvido bate com o pedido");
 
     // Lê do master, não do espelho em SessionInfo: comentar a chamada de
     // resize no motor tem que quebrar este teste.
@@ -379,12 +389,47 @@ fn com_dois_paineis_vence_o_menor_tamanho() {
     let info = m.spawn(opts("cmd.exe", &[])).expect("spawn");
 
     m.resize(&info.id, "painel-1", 200, 60).expect("resize 1");
-    m.resize(&info.id, "painel-2", 80, 24).expect("resize 2");
+    let aplicado = m.resize(&info.id, "painel-2", 80, 24).expect("resize 2");
+    assert_eq!(
+        aplicado,
+        (80, 24),
+        "o retorno tem que refletir o consenso, não o pedido deste painel"
+    );
     assert_eq!(m.actual_size(&info.id).expect("size"), (80, 24));
 
     // Fechado o painel apertado, a sessão volta a ocupar o espaço do maior.
     m.detach_view(&info.id, "painel-2").expect("detach");
     assert_eq!(m.actual_size(&info.id).expect("size"), (200, 60));
+
+    m.close(&info.id).expect("close");
+}
+
+#[test]
+fn painel_fantasma_de_antes_de_uma_recarga_nao_prende_o_tamanho_para_sempre() {
+    // O cenário do bloqueador N1: a janela estava em 80x24, o Vite recarrega
+    // (o cleanup do React do painel antigo nunca roda), e um painel novo,
+    // maior, se registra. Sem `reset_views`, o `min()` entre o painel morto
+    // e o painel novo prende a sessão no tamanho antigo para sempre — e não
+    // há como o painel novo se livrar disso, porque ele nem sabe que o
+    // painel fantasma existe.
+    let (m, _rec) = manager();
+    let info = m.spawn(opts("cmd.exe", &[])).expect("spawn");
+
+    m.resize(&info.id, "painel-fantasma", 80, 24).expect("resize fantasma");
+
+    // Simula a reconciliação: o front esqueceu o `viewId` antigo, então o
+    // painel fantasma nunca vai chamar `detach_view`. Só o reset resolve.
+    m.reset_views(&info.id).expect("reset_views");
+
+    let aplicado = m
+        .resize(&info.id, "painel-novo", 220, 60)
+        .expect("resize painel novo");
+    assert_eq!(
+        aplicado,
+        (220, 60),
+        "sem o reset, o resultado ficaria preso em (80, 24)"
+    );
+    assert_eq!(m.actual_size(&info.id).expect("size"), (220, 60));
 
     m.close(&info.id).expect("close");
 }

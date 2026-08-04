@@ -27,6 +27,7 @@ pub fn run() {
             commands::pty_write,
             commands::pty_resize,
             commands::pty_detach_view,
+            commands::pty_reset_views,
             commands::pty_kill,
             commands::pty_close,
             commands::pty_snapshot,

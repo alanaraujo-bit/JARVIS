@@ -2,13 +2,13 @@ use base64::Engine as _;
 use tauri::State;
 
 use crate::error::{JarvisError, Result};
-use crate::protocol::{SessionInfo, ShellProfile, SnapshotPayload, SpawnOptions};
+use crate::protocol::{ResizeResult, SessionInfo, ShellProfile, SnapshotPayload, SpawnOptions};
 use crate::pty::PtyManager;
 
-// Todos os comandos são `async`. Sem isso o corpo roda inline no handler de
+// Todos os comandos sao `async`. Sem isso o corpo roda inline no handler de
 // IPC, ou seja, na thread que bombeia as mensagens da janela: um `pty_write`
-// grande num processo que não lê stdin encheria o pipe do ConPTY e congelaria
-// a janela inteira até o filho consumir. Com `async` o Tauri os joga no pool.
+// grande num processo que nao le stdin encheria o pipe do ConPTY e congelaria
+// a janela inteira ate o filho consumir. Com `async` o Tauri os joga no pool.
 
 #[tauri::command(async)]
 pub fn pty_spawn(manager: State<'_, PtyManager>, opts: SpawnOptions) -> Result<SessionInfo> {
@@ -16,7 +16,7 @@ pub fn pty_spawn(manager: State<'_, PtyManager>, opts: SpawnOptions) -> Result<S
 }
 
 /// `b64` preserva bytes crus (teclas de controle, colagens com UTF-8
-/// multibyte, sequências ANSI) que uma string JSON corromperia.
+/// multibyte, sequencias ANSI) que uma string JSON corromperia.
 #[tauri::command(async)]
 pub fn pty_write(manager: State<'_, PtyManager>, id: String, b64: String) -> Result<()> {
     let bytes = base64::engine::general_purpose::STANDARD
@@ -25,9 +25,10 @@ pub fn pty_write(manager: State<'_, PtyManager>, id: String, b64: String) -> Res
     manager.write(&id, &bytes)
 }
 
-/// `view_id` identifica o painel que pede o tamanho. Com splits, dois painéis
-/// exibindo a mesma sessão brigariam pelo resize num laço infinito; o motor
-/// aplica o menor tamanho pedido, o único em que o conteúdo cabe nos dois.
+/// `view_id` identifica o painel que pede o tamanho. Com splits, dois paineis
+/// exibindo a mesma sessao brigariam pelo resize num laco infinito; o motor
+/// aplica o menor tamanho pedido e devolve o que realmente aplicou, para o
+/// front nao desenhar o xterm maior do que o PTY de fato esta.
 #[tauri::command(async)]
 pub fn pty_resize(
     manager: State<'_, PtyManager>,
@@ -35,13 +36,24 @@ pub fn pty_resize(
     view_id: String,
     cols: u16,
     rows: u16,
-) -> Result<()> {
-    manager.resize(&id, &view_id, cols, rows)
+) -> Result<ResizeResult> {
+    let (cols, rows) = manager.resize(&id, &view_id, cols, rows)?;
+    Ok(ResizeResult { cols, rows })
 }
 
 #[tauri::command(async)]
 pub fn pty_detach_view(manager: State<'_, PtyManager>, id: String, view_id: String) -> Result<()> {
     manager.detach_view(&id, &view_id)
+}
+
+/// Esquece todos os paineis registrados para a sessao. Chamado pelo front
+/// quando reconcilia apos uma vida nova de pagina (F5, HMR, recuperacao de
+/// crash): sem isso, um painel de antes da recarga fica preso em `views`
+/// para sempre e a sessao nunca mais cresce alem do menor tamanho que ele
+/// pediu.
+#[tauri::command(async)]
+pub fn pty_reset_views(manager: State<'_, PtyManager>, id: String) -> Result<()> {
+    manager.reset_views(&id)
 }
 
 #[tauri::command(async)]
