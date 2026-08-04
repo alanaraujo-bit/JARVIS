@@ -547,6 +547,11 @@ fn emite_chunk(app: &AppHandle, request_id: &str, text: String) {
 /// Erros de rede crus ("error sending request for url ...") não ajudam
 /// ninguém. A causa quase sempre é uma destas duas.
 fn descreve_rede(e: &reqwest::Error, endpoint: &str) -> String {
+    // O endpoint também passa pela redação: a documentação do Google mostra a
+    // URL do Gemini já com `?key=...`, e quem colar isso no campo de endpoint
+    // veria a própria chave no balão de erro do chat — e em qualquer print de
+    // tela que mandasse pedindo ajuda.
+    let endpoint = redige_segredos(endpoint);
     if e.is_connect() {
         format!("não consegui conectar em {endpoint} — o serviço está no ar?")
     } else if e.is_timeout() {

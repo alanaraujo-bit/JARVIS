@@ -138,6 +138,10 @@ export function WorkspaceSidebar() {
                   className="ws-rename-input"
                   autoFocus
                   defaultValue={ws.name}
+                  // Sem isto o cursor cai no fim e digitar concatena ao nome
+                  // antigo em vez de substituí-lo — é o que o TabBar já faz
+                  // certo para renomear aba.
+                  onFocus={(e) => e.currentTarget.select()}
                   onClick={(e) => e.stopPropagation()}
                   onBlur={(e) => commitRename(ws.id, e.currentTarget.value)}
                   onKeyDown={(e) => {

@@ -34,10 +34,39 @@ pub enum AiProvider {
     Gemini,
 }
 
+/// Lê o provedor sem derrubar o arquivo inteiro se o valor for desconhecido.
+///
+/// `#[serde(default)]` cobre o campo **ausente**, não o campo presente com um
+/// valor que esta versão não conhece. Sem esta tolerância, um único
+/// `"provider":"openrouter"` — escrito por uma versão mais nova, num
+/// downgrade — fazia a leitura falhar inteira, o arquivo ser arquivado como
+/// `.quebrado-*.json` e o app subir do zero: o usuário perdia workspaces,
+/// arranjo de painéis e a chave de API por causa de uma palavra.
+fn provider_tolerante<'de, D>(d: D) -> std::result::Result<AiProvider, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // Passa por `Value` para tolerar até um tipo inesperado (número, objeto)
+    // no lugar da string.
+    let bruto = serde_json::Value::deserialize(d)?;
+    Ok(match bruto.as_str() {
+        Some("ollama") => AiProvider::Ollama,
+        Some("openai") => AiProvider::OpenAi,
+        Some("anthropic") => AiProvider::Anthropic,
+        Some("gemini") => AiProvider::Gemini,
+        outro => {
+            if let Some(nome) = outro {
+                eprintln!("[jarvis] provedor de IA desconhecido ({nome}); usando o padrão");
+            }
+            default_provider()
+        }
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiConfig {
-    #[serde(default = "default_provider")]
+    #[serde(default = "default_provider", deserialize_with = "provider_tolerante")]
     pub provider: AiProvider,
     #[serde(default = "default_endpoint")]
     pub endpoint: String,
@@ -110,10 +139,34 @@ pub struct UiConfig {
     pub ai_panel_open: bool,
 }
 
+/// Descarta só as entradas malformadas, em vez de rejeitar a lista inteira.
+///
+/// Um workspace sem `path` (campo sem `default`, obrigatório de propósito —
+/// não faz sentido um workspace sem pasta) fazia o `Vec<WorkspaceConfig>`
+/// inteiro falhar o parse, e por `AppConfig` não ter fallback por campo isso
+/// arrastava o config inteiro para o caminho de "arquivo ilegível": todos os
+/// workspaces bons iam junto por causa de um só corrompido.
+fn workspaces_tolerantes<'de, D>(d: D) -> std::result::Result<Vec<WorkspaceConfig>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let bruto = Vec::<serde_json::Value>::deserialize(d)?;
+    Ok(bruto
+        .into_iter()
+        .filter_map(|v| match serde_json::from_value::<WorkspaceConfig>(v) {
+            Ok(w) => Some(w),
+            Err(e) => {
+                eprintln!("[jarvis] workspace inválido no config, ignorado ({e})");
+                None
+            }
+        })
+        .collect())
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "workspaces_tolerantes")]
     pub workspaces: Vec<WorkspaceConfig>,
     #[serde(default)]
     pub active_workspace_id: Option<String>,

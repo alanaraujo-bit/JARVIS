@@ -78,14 +78,33 @@ export default function App() {
   const sidebarOpen = useWorkspaceStore((s) => s.sidebarOpen);
   const loadWorkspaces = useWorkspaceStore((s) => s.loadFromConfig);
   const openFolderAndAdd = useWorkspaceStore((s) => s.openFolderAndAdd);
-  const toggleSidebar = useWorkspaceStore((s) => s.toggleSidebar);
+  const toggleSidebarRaw = useWorkspaceStore((s) => s.toggleSidebar);
+  const setSidebarOpen = useWorkspaceStore((s) => s.setSidebarOpen);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
   const updateWorkspace = useWorkspaceStore((s) => s.updateWorkspace);
 
   const aiPanelOpen = useAiStore((s) => s.panelOpen);
   const loadAiConfig = useAiStore((s) => s.loadConfig);
-  const toggleAiPanel = useAiStore((s) => s.togglePanel);
+  const toggleAiPanelRaw = useAiStore((s) => s.togglePanel);
+  const setAiPanelOpen = useAiStore((s) => s.setPanelOpen);
   const clearAiMessages = useAiStore((s) => s.clearMessages);
+
+  /**
+   * Abaixo de 900px as duas gavetas passam a flutuar sobre o terminal em vez
+   * de disputar espaço com ele (ver `styles.css`). Com as duas abertas ao
+   * mesmo tempo elas cobrem a maior parte da tela e o que sobra do terminal
+   * fica ilegível, cortado no meio da palavra. Abrir uma fecha a outra
+   * automaticamente só nesse regime — em tela larga as duas convivem bem.
+   */
+  const ESTREITO = 900;
+  const toggleSidebar = useCallback(() => {
+    if (window.innerWidth <= ESTREITO && !sidebarOpen) setAiPanelOpen(false);
+    toggleSidebarRaw();
+  }, [sidebarOpen, setAiPanelOpen, toggleSidebarRaw]);
+  const toggleAiPanel = useCallback(() => {
+    if (window.innerWidth <= ESTREITO && !aiPanelOpen) setSidebarOpen(false);
+    toggleAiPanelRaw();
+  }, [aiPanelOpen, setSidebarOpen, toggleAiPanelRaw]);
 
   // Refs espelhando o estado mais recente para uso dentro de callbacks
   // estáveis (atalhos de teclado) sem precisar recriá-los a cada mudança.

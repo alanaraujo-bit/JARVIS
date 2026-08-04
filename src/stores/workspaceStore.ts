@@ -23,6 +23,7 @@ export interface WorkspaceStore {
   updateWorkspace: (id: string, patch: Partial<Pick<Workspace, "name" | "color" | "defaultProfileId">>) => void;
   reorderWorkspaces: (updater: (prev: Workspace[]) => Workspace[]) => void;
   toggleSidebar: () => void;
+  setSidebarOpen: (open: boolean) => void;
   openFolderAndAdd: () => Promise<Workspace | null>;
   persist: () => Promise<void>;
 }
@@ -105,6 +106,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   toggleSidebar: () => {
     set((s) => ({ sidebarOpen: !s.sidebarOpen }));
+    void get().persist();
+  },
+
+  setSidebarOpen: (open) => {
+    set({ sidebarOpen: open });
     void get().persist();
   },
 

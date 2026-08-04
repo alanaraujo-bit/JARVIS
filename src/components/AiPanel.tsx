@@ -215,7 +215,10 @@ function MessageContent({ content, streaming, onRunCommand }: MessageContentProp
                 <div className="ai-code-actions">
                   <button
                     className="ai-code-btn"
-                    onClick={() => void navigator.clipboard.writeText(code)}
+                    // Sem `.catch`, uma permissão de clipboard negada pelo
+                    // navegador virava exceção não tratada — sem aviso
+                    // nenhum ao usuário de que a cópia falhou.
+                    onClick={() => void navigator.clipboard.writeText(code).catch(() => {})}
                     title="Copiar"
                   >
                     📋
@@ -235,10 +238,17 @@ function MessageContent({ content, streaming, onRunCommand }: MessageContentProp
             </div>
           );
         }
-        // Texto normal — converte \n em <br>
+        // Texto normal — converte \n em <br>. As pontas são aparadas: o
+        // texto ao redor de um bloco de código sempre carrega o \n\n que o
+        // separava no markdown, e cada um vira um <br> — duas linhas em
+        // branco somadas à margem do próprio bloco abriam um vão de ~40px
+        // entre o código e o parágrafo seguinte.
+        const linhas = part.split("\n");
+        while (linhas.length && linhas[0].trim() === "") linhas.shift();
+        while (linhas.length && linhas[linhas.length - 1].trim() === "") linhas.pop();
         return (
           <span key={i}>
-            {part.split("\n").map((line, j) => (
+            {linhas.map((line, j) => (
               <span key={j}>
                 {j > 0 && <br />}
                 {line}

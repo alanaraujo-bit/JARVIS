@@ -19,9 +19,15 @@ interface Props {
 export function StatsPanel({ open, sessions, onClose }: Props) {
   // O tempo ativo precisa andar sozinho; sem este tique o painel mostraria
   // o mesmo "3min" enquanto estivesse aberto.
+  // O componente fica montado o tempo todo (só o `open` controla a
+  // renderização); sem realinhar no instante da abertura, `agora` ficava
+  // travado no valor da primeira montagem do app até o primeiro tique do
+  // intervalo — o painel abria mostrando até 1s de tempo defasado, às vezes
+  // arredondando um terminal recém-aberto para "0s" incorretamente cedo.
   const [agora, setAgora] = useState(() => Date.now());
   useEffect(() => {
     if (!open) return;
+    setAgora(Date.now());
     const t = window.setInterval(() => setAgora(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, [open]);
@@ -34,7 +40,11 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
   }, [open]);
 
   const stats = useMemo(() => computeStats(sessions, agora), [sessions, agora]);
-  const maiorUso = stats.byShell[0]?.sessions ?? 0;
+  // A barra tem que medir a mesma coisa que o número ao lado dela (bytes),
+  // não a contagem de sessões: com uma sessão por shell — o caso comum —
+  // `sessions / maiorUso` dava 100% para todo mundo, e a barra virava um
+  // enfeite sem relação com o "1.2 KB" escrito do lado.
+  const maiorUso = Math.max(0, ...stats.byShell.map((g) => g.bytesOut));
 
   if (!open) return null;
 
@@ -85,7 +95,7 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
               <div className="stats-bar-track">
                 <div
                   className="stats-bar-fill"
-                  style={{ width: `${maiorUso ? (g.sessions / maiorUso) * 100 : 0}%` }}
+                  style={{ width: `${maiorUso ? (g.bytesOut / maiorUso) * 100 : 0}%` }}
                 />
               </div>
               <span className="stats-bar-value">

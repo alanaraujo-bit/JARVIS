@@ -368,3 +368,17 @@ test("as divisões de painel sobrevivem a um recarregamento", async ({ page }) =
   await expect(page.locator(".split-leaf")).toHaveCount(2);
   await expect(page.locator(".split-divider")).toHaveCount(1);
 });
+
+test("renomear um workspace seleciona o texto antigo em vez de concatenar", async ({ page }) => {
+  await page.keyboard.press("Control+Shift+B");
+  await page.locator(".ws-add-btn").click();
+  const item = page.locator(".ws-item").first();
+
+  await item.dblclick();
+  const campo = page.locator(".ws-rename-input");
+  await expect(campo).toBeVisible();
+  await campo.fill("Meu Projeto");
+  await campo.press("Enter");
+
+  await expect(item.locator(".ws-name")).toHaveText("Meu Projeto");
+});

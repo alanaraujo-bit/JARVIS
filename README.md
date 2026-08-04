@@ -9,10 +9,13 @@ agentes de IA a pastas do computador e acompanha estatísticas reais de uso.
 
 | | JARVIS (Tauri) | Apps Electron |
 |---|---|---|
-| Instalador | ~10 MB | ~120 MB |
-| RAM em repouso | dezenas de MB | centenas de MB |
+| Instalador | 2,5 MB (medido) | ~120 MB |
+| Executável | 5,4 MB | dezenas de MB + runtime |
 | Motor web | WebView2 já presente no Windows 11 | Chromium embutido |
 | Camada de PTY | Rust falando direto com o ConPTY | ponte Node → C++ |
+
+Os dois primeiros números saem de `npm run app:build` nesta máquina
+(`JARVIS_0.1.0_x64-setup.exe`, perfil release com LTO e `strip`).
 
 O núcleo pesado (leitura dos PTYs, buffers, coalescência de eventos) roda em
 Rust com threads nativas; o WebView cuida só da interface.

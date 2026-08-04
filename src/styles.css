@@ -1333,7 +1333,11 @@ body {
 
 .launchers {
   min-width: 0;
-  overflow: hidden;
+  /* `hidden` recortava o terceiro chip sem deixar rastro nenhum — nem
+     rolagem, nem indicação de que havia mais shells. `auto` mantém o
+     encolhimento do flexbox e ainda deixa o usuário alcançar o resto. */
+  overflow-x: auto;
+  overflow-y: hidden;
   flex-shrink: 1;
 }
 
