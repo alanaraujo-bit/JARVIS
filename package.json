@@ -1,7 +1,7 @@
 {
   "name": "jarvis",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "JARVIS - central de terminais e agentes de IA para Windows",
   "scripts": {
@@ -14,10 +14,13 @@
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:all": "tsc --noEmit && vitest run && playwright test"
+    "test:all": "tsc --noEmit && vitest run && playwright test",
+    "release:manifest": "node scripts/release.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@xterm/addon-canvas": "^0.7.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.15.0",

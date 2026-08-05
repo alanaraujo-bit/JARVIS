@@ -116,7 +116,7 @@ export function installDevMock(): void {
       temperature: 0.7,
       maxTokens: 2048,
     },
-    ui: { sidebarOpen: false, aiPanelOpen: false },
+    ui: { sidebarOpen: false, aiPanelOpen: false, theme: "system", density: "cozy" },
   };
 
   const leConfig = (): Record<string, unknown> => {

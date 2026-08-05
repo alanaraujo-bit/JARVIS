@@ -199,3 +199,37 @@ document.querySelectorAll('[data-tilt]').forEach(card => {
   }
   animate();
 })();
+
+// ---------- download: sempre a última release ----------
+// O nome do instalador carrega a versão (`JARVIS_0.2.0_x64-setup.exe`), então
+// nenhum link fixo sobrevive à release seguinte. Aqui se pergunta ao GitHub
+// qual é o arquivo agora e o botão passa a apontar para ele.
+(function ultimaVersao() {
+  const btn = document.getElementById('download-btn');
+  const meta = document.getElementById('download-meta');
+  if (!btn) return;
+
+  fetch('https://api.github.com/repos/alanaraujo-bit/JARVIS/releases/latest', {
+    headers: { Accept: 'application/vnd.github+json' },
+  })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    .then((release) => {
+      const assets = release.assets || [];
+      // Só o instalador. Os artefatos do updater (`.nsis.zip`, `.sig`) e o
+      // `latest.json` moram na mesma release e não servem para instalar.
+      const exe = assets.find((a) => /-setup\.exe$/i.test(a.name || ''));
+      if (!exe) return;
+
+      btn.href = exe.browser_download_url;
+      btn.setAttribute('download', '');
+
+      if (meta) {
+        const mb = exe.size ? ` · ${(exe.size / 1024 / 1024).toFixed(1)} MB` : '';
+        meta.textContent = `${exe.name}${mb} · requer Windows 11`;
+      }
+    })
+    .catch(() => {
+      // Sem rede, ou os 60 pedidos por hora da API anônima esgotados: o botão
+      // fica na página de releases, de onde ainda se baixa em um clique.
+    });
+})();

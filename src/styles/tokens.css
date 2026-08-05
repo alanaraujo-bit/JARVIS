@@ -1,0 +1,333 @@
+/**
+ * Fundação visual do JARVIS.
+ *
+ * Três regras governam este arquivo:
+ *
+ * 1. **Nenhuma cor literal fora daqui.** Componente que escreve `#161a23`
+ *    direto no CSS quebra o tema claro sem ninguém perceber — o tema escuro
+ *    continua bonito e o bug só aparece para quem trocou.
+ *
+ * 2. **Os dois temas expõem exatamente os mesmos nomes.** `--surface-2` é
+ *    "a segunda camada acima do fundo" nos dois; no escuro ela é mais clara
+ *    que o fundo, no claro é mais escura. Pensar em camadas, e não em
+ *    "cinza 800", é o que faz um único conjunto de regras servir aos dois.
+ *
+ * 3. **Movimento é token, não improviso.** Toda transição sai de
+ *    `--ease-*` / `--dur-*`. É isso que dá ao app um "peso" coerente:
+ *    a gaveta, a aba e o modal desaceleram do mesmo jeito, como se fossem
+ *    a mesma matéria.
+ */
+
+:root {
+  /* ------------------------------ tipografia --------------------------- */
+  --font-ui: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
+
+  /* Escala tipográfica curta de propósito: quatro tamanhos cobrem o app
+     inteiro. Toda régua maior vira, na prática, licença para improvisar. */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 20px;
+  --text-2xl: 28px;
+
+  --weight-normal: 420;
+  --weight-medium: 520;
+  --weight-strong: 620;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.55;
+
+  /* Números em tabelas e métricas não podem dançar de largura enquanto
+     sobem. Sem isto, um contador de bytes treme a cada atualização. */
+  --numeric: "tnum" 1, "zero" 1;
+
+  /* ------------------------------- espaço ------------------------------ */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 24px;
+  --space-8: 32px;
+  --space-9: 48px;
+
+  /* ------------------------------- formas ------------------------------ */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 999px;
+
+  --border-width: 1px;
+
+  /* ------------------------------ movimento ---------------------------- */
+  /* A curva "água": desacelera longo e para sem bater. É a assinatura do
+     app — gavetas, abas e sobreposições usam todas esta. */
+  --ease-fluid: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Um leve avanço além do destino antes de assentar, para o que "chega"
+     na tela (modais, chips que aparecem). */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  /* Saídas: rápido no início, sem quique — nada deve parecer relutante
+     em sair da frente. */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-linear: linear;
+
+  --dur-instant: 90ms;
+  --dur-fast: 150ms;
+  --dur-normal: 240ms;
+  --dur-slow: 380ms;
+  --dur-slower: 620ms;
+
+  /* --------------------------- dimensões fixas ------------------------- */
+  --topbar-h: 42px;
+  --tabbar-h: 34px;
+  --sidebar-width: 248px;
+  --ai-panel-width: 380px;
+
+  color-scheme: dark;
+}
+
+/* Densidade compacta: mais linhas de terminal na tela sem trocar de fonte. */
+:root[data-density="compact"] {
+  --topbar-h: 36px;
+  --tabbar-h: 28px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 18px;
+}
+
+/* ========================================================================
+ * Tema escuro (padrão)
+ *
+ * Grafite frio, não preto puro: preto absoluto contra texto claro cria um
+ * halo que cansa a vista em sessão longa, e sobre OLED ainda faz smear no
+ * scroll do terminal.
+ * ===================================================================== */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0b0d11;
+  --surface-1: #101319;
+  --surface-2: #161a22;
+  --surface-3: #1d222c;
+  --surface-inset: #08090d;
+
+  --border: #232936;
+  --border-strong: #313a4b;
+  --border-subtle: #1a1f28;
+
+  --text: #e7ebf3;
+  --text-muted: #9aa4b8;
+  /**
+   * O terceiro degrau de texto é claro o bastante para passar em AA sobre
+   * a superfície MAIS clara do tema (`--surface-3`), não só sobre o fundo.
+   * O valor anterior media 3.40:1 ali — legível numa captura de tela,
+   * ilegível num monitor comum com brilho de escritório.
+   */
+  --text-faint: #828da2;
+  --text-inverted: #0b0d11;
+
+  --accent: #5aa9ff;
+  --accent-hover: #7cbcff;
+  --accent-quiet: #1b2a3f;
+  --accent-contrast: #04121f;
+
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+
+  --ok-quiet: #12291c;
+  --warn-quiet: #2c2312;
+  --danger-quiet: #2e1717;
+
+  /* Sombras no escuro são quase invisíveis; o que separa camadas aqui é a
+     luz de borda superior, não a sombra embaixo. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 18px 48px rgba(0, 0, 0, 0.55);
+  --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  --scrim: rgba(6, 8, 12, 0.62);
+  --glass: rgba(22, 26, 34, 0.72);
+
+  --selection: rgba(90, 169, 255, 0.28);
+}
+
+/* ========================================================================
+ * Tema claro
+ *
+ * Não é o escuro invertido: os contrastes são recalculados. Um acento que
+ * brilha sobre grafite fica ilegível sobre branco, então ele escurece e
+ * satura em vez de simplesmente inverter.
+ * ===================================================================== */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f6f7f9;
+  --surface-1: #ffffff;
+  --surface-2: #f1f3f6;
+  --surface-3: #e7eaf0;
+  --surface-inset: #eceff3;
+
+  --border: #dde1e8;
+  --border-strong: #c3cad6;
+  --border-subtle: #e9ecf1;
+
+  --text: #131720;
+  --text-muted: #5b6475;
+  /**
+   * No tema claro os três degraus de texto ficam necessariamente próximos:
+   * qualquer cinza claro o bastante para "sussurrar" sobre branco já falha
+   * em AA sobre `--surface-3`. A hierarquia aqui é feita por tamanho e
+   * peso, não por mais um passo de cinza — e é por isso que este valor é
+   * quase o mesmo do `--text-muted` em vez de ser visivelmente mais claro.
+   */
+  --text-faint: #5e6778;
+  --text-inverted: #ffffff;
+
+  /* Escurecidos em relação à primeira versão: os valores anteriores
+     passavam sobre branco e falhavam sobre `--surface-3`, que é justamente
+     onde estado costuma aparecer (linhas de lista, cartões). */
+  --accent: #125bc0;
+  --accent-hover: #0e4a9e;
+  --accent-quiet: #e2ecfb;
+  --accent-contrast: #ffffff;
+
+  --ok: #12703a;
+  --warn: #845000;
+  --danger: #b31f1f;
+  --info: #1a44c4;
+
+  --ok-quiet: #e4f5ea;
+  --warn-quiet: #fbf1dd;
+  --danger-quiet: #fbe6e6;
+
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-2: 0 6px 20px rgba(16, 24, 40, 0.1);
+  --shadow-3: 0 24px 56px rgba(16, 24, 40, 0.16);
+  --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  --scrim: rgba(19, 23, 32, 0.28);
+  --glass: rgba(255, 255, 255, 0.78);
+
+  --selection: rgba(18, 91, 192, 0.2);
+}
+
+/* Cor do workspace ativo. Fica fora dos blocos de tema porque quem a define
+   é o usuário, não a paleta — mas precisa de um valor até alguém escolher. */
+:root {
+  --ws-color: var(--accent);
+}
+
+/* ========================================================================
+ * Movimento acessível
+ *
+ * `prefers-reduced-motion` não é "animação mais curta": é a ausência de
+ * deslocamento. As durações vão a zero, e as transformações que *movem*
+ * coisas pela tela são neutralizadas nos próprios componentes.
+ * ===================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-fast: 0ms;
+    --dur-normal: 0ms;
+    --dur-slow: 0ms;
+    --dur-slower: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ========================================================================
+ * Primitivas reutilizáveis
+ * ===================================================================== */
+
+/**
+ * Superfície de vidro: fundo translúcido com desfoque. Só onde há conteúdo
+ * atrás que valha a pena insinuar (sobreposições sobre o terminal). Usar em
+ * painel opaco custa GPU sem entregar nada.
+ */
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+
+/** Foco visível e consistente — o mesmo anel em todo controle do app. */
+.focus-ring:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Só o anel de foco por teclado. O `:focus` genérico acendia o anel a cada
+   clique de mouse, o que polui exatamente a interface que queremos limpa. */
+button:focus:not(:focus-visible),
+[tabindex]:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ---------------------------- animações base --------------------------- */
+
+@keyframes jarvis-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/** Entrada "de baixo, com peso": o que aparece sobe um pouco e assenta. */
+@keyframes jarvis-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/** Pulso lento para estados "vivo/processando" — sem piscar. */
+@keyframes jarvis-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/** Varredura usada em skeletons e barras indeterminadas. */
+@keyframes jarvis-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(220%);
+  }
+}

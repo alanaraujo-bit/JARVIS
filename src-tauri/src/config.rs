@@ -134,13 +134,41 @@ fn default_color() -> String {
 }
 
 /// Preferências de interface que sobrevivem ao fechamento do app.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiConfig {
     #[serde(default)]
     pub sidebar_open: bool,
     #[serde(default)]
     pub ai_panel_open: bool,
+    /// `"system" | "dark" | "light"`. String livre de propósito: um valor
+    /// desconhecido escrito por uma versão futura não pode derrubar o parse
+    /// do arquivo inteiro — o front trata o que não reconhece como
+    /// `"system"`.
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    /// Densidade da interface: `"compact" | "cozy"`.
+    #[serde(default = "default_density")]
+    pub density: String,
+}
+
+fn default_theme() -> String {
+    "system".to_string()
+}
+
+fn default_density() -> String {
+    "cozy".to_string()
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            sidebar_open: false,
+            ai_panel_open: false,
+            theme: default_theme(),
+            density: default_density(),
+        }
+    }
 }
 
 /// Descarta só as entradas malformadas, em vez de rejeitar a lista inteira.
@@ -226,6 +254,10 @@ pub struct UiPatch {
     pub sidebar_open: Option<bool>,
     #[serde(default)]
     pub ai_panel_open: Option<bool>,
+    #[serde(default)]
+    pub theme: Option<String>,
+    #[serde(default)]
+    pub density: Option<String>,
 }
 
 fn double_option<'de, D>(d: D) -> std::result::Result<Option<Option<String>>, D::Error>
@@ -258,6 +290,12 @@ impl AppConfig {
             }
             if let Some(v) = ui.ai_panel_open {
                 self.ui.ai_panel_open = v;
+            }
+            if let Some(v) = ui.theme {
+                self.ui.theme = v;
+            }
+            if let Some(v) = ui.density {
+                self.ui.density = v;
             }
         }
     }

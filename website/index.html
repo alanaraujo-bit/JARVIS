@@ -288,11 +288,17 @@
     <span class="eyebrow eyebrow--light">05 — Bora começar</span>
     <h2 class="download-title">Seu terminal está pronto para ficar mais inteligente.</h2>
     <p class="download-sub">Grátis, código aberto, sem telemetria. Windows 11, alguns segundos de instalação.</p>
-    <a href="https://github.com/alanaraujo-bit/JARVIS/releases/latest/download/JARVIS_0.1.0_x64-setup.exe" download class="btn btn-primary btn-xl">
+    <!--
+      O href começa na página de releases, que nunca quebra. O script troca
+      por um link direto ao .exe assim que descobre o nome real do arquivo.
+      O caminho antigo embutia a versão no nome (`JARVIS_0.1.0_x64-setup.exe`)
+      e virava 404 sozinho na primeira release seguinte.
+    -->
+    <a id="download-btn" href="https://github.com/alanaraujo-bit/JARVIS/releases/latest" class="btn btn-primary btn-xl">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3v13m0 0l-5-5m5 5l5-5M4 21h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Baixar JARVIS para Windows
     </a>
-    <p class="download-meta">JARVIS_0.1.0_x64-setup.exe · requer Windows 11</p>
+    <p class="download-meta" id="download-meta">requer Windows 11</p>
     <p class="download-hint-mobile">
       Está no celular? Copie o link desta página e abra no seu PC com Windows 11 para instalar.
     </p>

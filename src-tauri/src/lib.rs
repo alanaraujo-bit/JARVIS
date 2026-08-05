@@ -18,7 +18,17 @@ use crate::sink::TauriSink;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // O `process` existe para o reinício depois de instalar a atualização;
+    // sem ele o app fecharia e a pessoa teria que reabrir na mão.
+    builder = builder.plugin(tauri_plugin_process::init());
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    builder
         .setup(|app| {
             let manager = PtyManager::new(Arc::new(TauriSink::new(app.handle().clone())));
             manager.start_dispatcher();

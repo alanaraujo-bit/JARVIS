@@ -18,6 +18,7 @@ import {
 } from "../lib/ipc";
 import { registerTerminal, unregisterTerminal } from "../lib/terminalRegistry";
 import { theme } from "../lib/theme";
+import { Icon } from "./Icon";
 
 interface Props {
   sessionId: string;
@@ -345,14 +346,29 @@ function SearchBar({ valor, onChange, onNext, onPrev, onClose }: SearchBarProps)
           }
         }}
       />
-      <button className="term-search-btn" onClick={onPrev} title="Anterior (Shift+Enter)">
-        ↑
+      <button
+        className="term-search-btn"
+        onClick={onPrev}
+        title="Anterior (Shift+Enter)"
+        aria-label="Ocorrência anterior"
+      >
+        <Icon name="chevron-up" size={14} />
       </button>
-      <button className="term-search-btn" onClick={onNext} title="Próxima (Enter)">
-        ↓
+      <button
+        className="term-search-btn"
+        onClick={onNext}
+        title="Próxima (Enter)"
+        aria-label="Próxima ocorrência"
+      >
+        <Icon name="chevron-down" size={14} />
       </button>
-      <button className="term-search-btn" onClick={onClose} title="Fechar (Esc)">
-        ×
+      <button
+        className="term-search-btn"
+        onClick={onClose}
+        title="Fechar (Esc)"
+        aria-label="Fechar busca"
+      >
+        <Icon name="close" size={14} />
       </button>
     </div>
   );

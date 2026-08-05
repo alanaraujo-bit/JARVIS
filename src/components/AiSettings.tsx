@@ -7,6 +7,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAiStore, PROVIDER_DEFAULTS, type AiProvider } from "../stores/aiStore";
+import { Icon } from "./Icon";
+
+/**
+ * Resultado do teste de conexão como dado, e não como string já decorada.
+ *
+ * A versão anterior guardava `"❌ " + erro` e mandava para a tela. Um emoji
+ * dentro do estado impede a interface de pintar o sucesso em verde e a
+ * falha em vermelho (só existe uma classe CSS para os dois), e o próprio
+ * símbolo é a única indicação do resultado — invisível para leitor de tela.
+ */
+type TestResult = { ok: boolean; text: string };
 
 const PROVIDERS: { value: AiProvider; label: string; needsKey: boolean }[] = [
   { value: "ollama", label: "Ollama (local)", needsKey: false },
@@ -21,7 +32,7 @@ export function AiSettings() {
 
   const [localConfig, setLocalConfig] = useState({ ...config });
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   // Lista os modelos com a config que está na tela, não com a salva: sem
   // isso, digitar uma chave nova e clicar em "Testar" consultaria o provedor
@@ -78,7 +89,7 @@ export function AiSettings() {
    */
   const handleTest = useCallback(async () => {
     if (problema) {
-      setTestResult(`❌ ${problema}`);
+      setTestResult({ ok: false, text: problema });
       return;
     }
     setTesting(true);
@@ -86,7 +97,11 @@ export function AiSettings() {
     await fetchModels(localConfig);
     const erro = useAiStore.getState().modelsError;
     const total = useAiStore.getState().availableModels.length;
-    setTestResult(erro ? `❌ ${erro}` : `✅ Conexão OK — ${total} modelo(s) disponíveis.`);
+    setTestResult(
+      erro
+        ? { ok: false, text: erro }
+        : { ok: true, text: `Conexão OK — ${total} modelo(s) disponíveis.` },
+    );
     setTesting(false);
   }, [localConfig, fetchModels, problema]);
 
@@ -96,7 +111,9 @@ export function AiSettings() {
     <div className="ai-settings">
       <div className="ai-settings-header">
         <span>Configurações de IA</span>
-        <button className="ai-settings-close" onClick={toggleSettings}>×</button>
+        <button className="ai-settings-close" onClick={toggleSettings} aria-label="Fechar configurações">
+          <Icon name="close" size={14} />
+        </button>
       </div>
 
       <div className="ai-settings-body">
@@ -191,9 +208,22 @@ export function AiSettings() {
         </label>
 
         {/* Teste */}
-        {testResult && <div className="ai-test-result">{testResult}</div>}
+        {testResult && (
+          <div
+            className={`ai-test-result ${testResult.ok ? "ok" : "erro"}`}
+            // `status` e não `alert`: o resultado aparece porque o usuário
+            // pediu, então não precisa interromper a leitura em curso.
+            role="status"
+          >
+            <Icon name={testResult.ok ? "check" : "warning"} size={14} />
+            <span>{testResult.text}</span>
+          </div>
+        )}
         {!testResult && modelsError && (
-          <div className="ai-test-result">❌ {modelsError}</div>
+          <div className="ai-test-result erro" role="status">
+            <Icon name="warning" size={14} />
+            <span>{modelsError}</span>
+          </div>
         )}
 
         {problema && <div className="ai-field-hint">{problema}</div>}

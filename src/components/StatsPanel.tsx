@@ -7,6 +7,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { Icon } from "./Icon";
+
 import {
   claudeSettingsSet,
   claudeUsageSummary,
@@ -141,8 +143,13 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
       >
         <div className="stats-header">
           <span>Estatísticas de uso</span>
-          <button className="stats-close" onClick={onClose} title="Fechar (Esc)">
-            ×
+          <button
+            className="stats-close"
+            onClick={onClose}
+            title="Fechar (Esc)"
+            aria-label="Fechar estatísticas"
+          >
+            <Icon name="close" size={15} />
           </button>
         </div>
 

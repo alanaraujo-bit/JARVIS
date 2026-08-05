@@ -19,6 +19,13 @@ export interface BufferLike {
       getLine(row: number): { translateToString(trim?: boolean): string } | undefined;
     };
   };
+  /**
+   * Opcional porque os testes registram dublês que só têm buffer. Existe
+   * para a troca de tema alcançar terminais já montados: o xterm não lê
+   * variáveis CSS, então a única forma de repintar um terminal vivo é
+   * escrever nas opções dele.
+   */
+  options?: { theme?: unknown };
 }
 
 const terminais = new Map<string, BufferLike>();
@@ -38,6 +45,19 @@ export function unregisterTerminal(sessionId: string, term: BufferLike): void {
 
 export function getTerminal(sessionId: string): BufferLike | undefined {
   return terminais.get(sessionId);
+}
+
+/**
+ * Repinta todos os terminais montados.
+ *
+ * Trocar o tema sem isto deixaria cada aba já aberta com as cores antigas
+ * até ser fechada e reaberta — e como as abas sobrevivem à troca, na prática
+ * o terminal ficaria escuro para sempre num app claro.
+ */
+export function retintTerminals(xtermTheme: unknown): void {
+  for (const term of terminais.values()) {
+    if (term.options) term.options.theme = xtermTheme;
+  }
 }
 
 /** Usado nos testes para começar de um estado limpo. */

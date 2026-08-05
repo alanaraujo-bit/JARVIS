@@ -1,9 +1,38 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="dark" data-density="cozy">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JARVIS</title>
+    <script>
+      /**
+       * Pinta o tema antes do primeiro quadro.
+       *
+       * A preferência real mora no config em disco, que só chega depois de
+       * um IPC — tarde demais: a janela já teria aparecido escura para quem
+       * usa tema claro, com um flash branco no caminho inverso. O último
+       * tema aplicado fica espelhado em `localStorage` só para este palpite
+       * de arranque; o config continua sendo a fonte da verdade e corrige
+       * em silêncio se divergirem.
+       */
+      (function () {
+        try {
+          var salvo = localStorage.getItem("jarvis.theme") || "system";
+          var resolvido =
+            salvo === "system"
+              ? window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark"
+              : salvo;
+          document.documentElement.setAttribute("data-theme", resolvido);
+          document.documentElement.style.colorScheme = resolvido;
+          var densidade = localStorage.getItem("jarvis.density") || "cozy";
+          document.documentElement.setAttribute("data-density", densidade);
+        } catch (e) {
+          /* localStorage bloqueado: segue no escuro, que é o padrão do HTML. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

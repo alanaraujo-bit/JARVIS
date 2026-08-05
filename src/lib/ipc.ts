@@ -197,6 +197,10 @@ export interface WorkspaceConfigPayload {
 export interface UiConfigPayload {
   sidebarOpen: boolean;
   aiPanelOpen: boolean;
+  /** `"system" | "dark" | "light"` — string livre; o front valida ao ler. */
+  theme: string;
+  /** `"compact" | "cozy"`. */
+  density: string;
 }
 
 export interface AppConfig {
@@ -233,14 +237,47 @@ export type ConfigPatch = Partial<Omit<AppConfig, "ui">> & {
  * abertura as trataria como órfãs de uma queda, mesmo num fechamento normal.
  */
 export async function onWindowCloseFlush(flush: () => Promise<void>): Promise<UnlistenFn> {
+  // Fora do app nativo não há janela do Tauri. A guarda testa o caminho que
+  // `getCurrentWindow()` de fato lê, e não a mera presença de
+  // `__TAURI_INTERNALS__`: o backend simulado instala esse objeto para
+  // interceptar os `invoke`, mas não tem `metadata.currentWindow` — checar
+  // só a chave raiz passava direto e continuava lançando duas vezes por
+  // carga, ruído permanente no console onde se procura por bug real.
+  const internals = (window as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: unknown } } })
+    .__TAURI_INTERNALS__;
+  if (!internals?.metadata?.currentWindow) return () => {};
+
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
   const win = getCurrentWindow();
+
+  // Segurar o fechamento é uma aposta: se o que vem depois falhar, a janela
+  // fica impossível de fechar — nem o X nem o Alt+F4 escapam, porque os dois
+  // passam por aqui. Só se segura o que se sabe soltar, então cada caminho
+  // abaixo termina com a janela fechada.
+  let jaFechando = false;
+
   return win.onCloseRequested(async (event) => {
+    // Segunda passagem: o `close()` de resgate lá embaixo dispara o evento de
+    // novo. Deixar seguir, ou o resgate viraria um laço.
+    if (jaFechando) return;
     event.preventDefault();
+
     try {
-      await flush();
-    } finally {
-      void win.destroy();
+      // O salvar é uma cortesia, não uma condição. Um `invoke` que não volta
+      // (disco travado, backend ocupado) não pode custar o fechamento.
+      await Promise.race([flush(), new Promise((r) => setTimeout(r, 1500))]);
+    } catch {
+      // Histórico desatualizado é melhor que janela presa.
+    }
+
+    jaFechando = true;
+    try {
+      await win.destroy();
+    } catch {
+      // `destroy` depende de `core:window:allow-destroy` na capability. Se
+      // um dia sumir de lá de novo, o `close()` ainda fecha — desta vez sem
+      // ser interceptado, graças ao `jaFechando`.
+      await win.close();
     }
   });
 }

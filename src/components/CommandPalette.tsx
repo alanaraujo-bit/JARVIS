@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { moveSelection, searchCommands, type Command } from "../lib/palette";
+import { usePointerGlow } from "../hooks/usePointerGlow";
 
 interface Props {
   open: boolean;
@@ -19,6 +20,7 @@ export function CommandPalette({ open, commands, onClose }: Props) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const caixaRef = usePointerGlow<HTMLDivElement>();
 
   const matches = useMemo(() => searchCommands(commands, query), [commands, query]);
 
@@ -46,6 +48,7 @@ export function CommandPalette({ open, commands, onClose }: Props) {
 
   if (!open) return null;
 
+
   const executa = (cmd: Command | undefined) => {
     if (!cmd) return;
     // Fecha antes de executar: comandos que abrem diálogos nativos (escolher
@@ -57,7 +60,11 @@ export function CommandPalette({ open, commands, onClose }: Props) {
   return (
     <div className="palette-backdrop" onMouseDown={onClose}>
       <div
-        className="palette"
+        // A luz mora na caixa inteira, e não só na lista: com ela restrita
+        // à lista, o brilho terminava numa borda reta logo abaixo do campo
+        // de busca — que é justamente onde o ponteiro entra.
+        className="palette fluid-list"
+        ref={caixaRef}
         role="dialog"
         aria-modal="true"
         aria-label="Paleta de comandos"

@@ -5,10 +5,13 @@ import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
 import { AiPanel } from "./components/AiPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { StatsPanel } from "./components/StatsPanel";
+import { UpdateBanner } from "./components/UpdateBanner";
 import type { Command as PaletteCommand } from "./lib/palette";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { useAiStore } from "./stores/aiStore";
+import { useUiStore } from "./stores/uiStore";
+import { Icon, shellIcon } from "./components/Icon";
 import { buildAiContext, buildSystemPrompt, captureTerminalLines } from "./lib/aiContext";
 import { getTerminal } from "./lib/terminalRegistry";
 import { parseLayout, restoreLayout } from "./lib/restoreLayout";
@@ -54,6 +57,17 @@ interface TabState {
   workspaceId: string | null;
 }
 
+const TEMA_ROTULO: Record<string, string> = {
+  system: "seguindo o sistema",
+  light: "claro",
+  dark: "escuro",
+};
+
+const DENSIDADE_ROTULO: Record<string, string> = {
+  cozy: "confortável",
+  compact: "compacta",
+};
+
 function newTabFromSession(info: SessionInfo, workspaceId: string | null = null): TabState {
   const node = leaf(info.id);
   return { id: nextId("tab"), title: info.title, root: node, activePaneId: node.id, workspaceId };
@@ -84,6 +98,13 @@ export default function App() {
   const setSidebarOpen = useWorkspaceStore((s) => s.setSidebarOpen);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
   const updateWorkspace = useWorkspaceStore((s) => s.updateWorkspace);
+
+  const themeMode = useUiStore((s) => s.themeMode);
+  const cycleTheme = useUiStore((s) => s.cycleTheme);
+  const hydrateUi = useUiStore((s) => s.hydrate);
+  const startSystemWatch = useUiStore((s) => s.startSystemWatch);
+  const density = useUiStore((s) => s.density);
+  const setDensity = useUiStore((s) => s.setDensity);
 
   const aiPanelOpen = useAiStore((s) => s.panelOpen);
   const loadAiConfig = useAiStore((s) => s.loadConfig);
@@ -156,6 +177,20 @@ export default function App() {
     },
     [persistHistory],
   );
+
+  /**
+   * Tema: o `index.html` já pintou um palpite vindo do `localStorage`; aqui
+   * a preferência real, que mora no config em disco, assume. Corre em
+   * paralelo com o resto do arranque de propósito — esperar o config para
+   * desenhar a janela seria trocar um flash por uma tela preta.
+   */
+  useEffect(() => {
+    const parar = startSystemWatch();
+    void configLoad()
+      .then((cfg) => hydrateUi({ theme: cfg.ui?.theme, density: cfg.ui?.density }))
+      .catch(() => {});
+    return parar;
+  }, [hydrateUi, startSystemWatch]);
 
   useEffect(() => {
     void shellsDetect().then(setProfiles).catch((e) => setError(String(e)));
@@ -977,62 +1012,102 @@ export default function App() {
       className={`app ${sidebarOpen ? "sidebar-open" : ""} ${aiPanelOpen ? "ai-open" : ""}`}
       style={activeWs ? { "--ws-color": activeWs.color } as React.CSSProperties : undefined}
     >
+      <UpdateBanner />
       <header className="topbar">
         <button
-          className="topbar-btn"
+          className={`topbar-btn ${sidebarOpen ? "active" : ""}`}
           onClick={toggleSidebar}
           title="Workspaces (Ctrl+Shift+B)"
+          aria-label="Workspaces"
+          aria-pressed={sidebarOpen}
         >
-          ☰
+          <Icon name="sidebar" />
         </button>
         <span className="brand">JARVIS</span>
-        {activeWs && <span className="ws-badge" style={{ background: activeWs.color }}>{activeWs.name}</span>}
+        {activeWs && (
+          <span className="ws-badge">
+            <span className="ws-badge-dot" style={{ background: activeWs.color }} />
+            {activeWs.name}
+          </span>
+        )}
         <div className="launchers">
           {profiles.map((p) => (
-            <button key={p.id} className="chip" onClick={() => void openTab(p)} title={`Nova aba: ${p.name}`}>
-              + {p.name}
+            <button
+              key={p.id}
+              className="chip"
+              onClick={() => void openTab(p)}
+              title={`Nova aba: ${p.name}`}
+            >
+              <Icon name={shellIcon(p.icon)} size={14} />
+              {p.name}
             </button>
           ))}
         </div>
         {activeTab && (
           <div className="pane-actions">
+            <span className="topbar-sep" aria-hidden="true" />
             <button
-              className="chip"
+              className="topbar-btn"
               title="Dividir ao lado (Ctrl+Shift+D)"
+              aria-label="Dividir ao lado"
               onClick={() => void splitActivePane("row")}
             >
-              ⬒ Ao lado
+              <Icon name="split-right" />
             </button>
             <button
-              className="chip"
+              className="topbar-btn"
               title="Dividir abaixo (Ctrl+Shift+E)"
+              aria-label="Dividir abaixo"
               onClick={() => void splitActivePane("column")}
             >
-              ⬓ Abaixo
+              <Icon name="split-down" />
             </button>
           </div>
         )}
-        <button
-          className="topbar-btn"
-          onClick={() => setPaletteOpen(true)}
-          title="Paleta de comandos (Ctrl+Shift+P)"
-        >
-          ⌘
-        </button>
-        <button
-          className="topbar-btn"
-          onClick={() => setStatsOpen(true)}
-          title="Estatísticas de uso (Ctrl+Shift+S)"
-        >
-          ▤
-        </button>
-        <button
-          className={`topbar-btn ai-toggle ${aiPanelOpen ? "active" : ""}`}
-          onClick={toggleAiPanel}
-          title="JARVIS AI (Ctrl+Shift+I)"
-        >
-          ✦
-        </button>
+        <div className="topbar-right">
+          <span className="topbar-sep" aria-hidden="true" />
+          <button
+            className="topbar-btn"
+            onClick={() => setDensity(density === "cozy" ? "compact" : "cozy")}
+            title={`Densidade: ${DENSIDADE_ROTULO[density]} — clique para alternar`}
+            aria-label={`Densidade: ${DENSIDADE_ROTULO[density]}`}
+          >
+            <Icon name="layers" />
+          </button>
+          <button
+            className="topbar-btn"
+            onClick={cycleTheme}
+            title={`Tema: ${TEMA_ROTULO[themeMode]} — clique para alternar`}
+            aria-label={`Tema: ${TEMA_ROTULO[themeMode]}`}
+          >
+            <Icon name={themeMode === "system" ? "monitor" : themeMode === "light" ? "sun" : "moon"} />
+          </button>
+          <button
+            className="topbar-btn"
+            onClick={() => setPaletteOpen(true)}
+            title="Paleta de comandos (Ctrl+Shift+P)"
+            aria-label="Paleta de comandos"
+          >
+            <Icon name="command" />
+          </button>
+          <button
+            className="topbar-btn"
+            onClick={() => setStatsOpen(true)}
+            title="Estatísticas de uso (Ctrl+Shift+S)"
+            aria-label="Estatísticas de uso"
+          >
+            <Icon name="activity" />
+          </button>
+          <button
+            className={`topbar-btn ai-toggle ${aiPanelOpen ? "active" : ""}`}
+            onClick={toggleAiPanel}
+            title="JARVIS AI (Ctrl+Shift+I)"
+            aria-label="JARVIS AI"
+            aria-pressed={aiPanelOpen}
+          >
+            <Icon name="spark" />
+          </button>
+        </div>
       </header>
 
       <TabBar
@@ -1092,8 +1167,13 @@ export default function App() {
                       <button className="chip" onClick={() => void reopenRecovery(e)}>
                         Reabrir
                       </button>
-                      <button className="chip subtle" onClick={() => dismissRecovery(e.id)}>
-                        ×
+                      <button
+                        className="chip subtle"
+                        onClick={() => dismissRecovery(e.id)}
+                        aria-label="Descartar esta sessão"
+                        title="Descartar"
+                      >
+                        <Icon name="close" size={13} />
                       </button>
                     </div>
                   </li>
@@ -1107,7 +1187,8 @@ export default function App() {
               <p>Escolha um shell na barra de cima para abrir um terminal.</p>
               {workspaces.length === 0 && (
                 <button className="chip empty-action" onClick={() => void openFolderAndAdd()}>
-                  📂 Abrir pasta de projeto
+                  <Icon name="folder-open" size={14} />
+                  Abrir pasta de projeto
                 </button>
               )}
               {/* Os atalhos não aparecem em lugar nenhum até a primeira aba
@@ -1297,7 +1378,7 @@ function TabBar({
               onClose(t.id);
             }}
           >
-            ×
+            <Icon name="close" size={12} />
           </button>
         </div>
       ))}

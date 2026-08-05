@@ -8,6 +8,8 @@
 import { useCallback, useRef, useState } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { WORKSPACE_COLORS } from "../lib/workspace";
+import { usePointerGlow } from "../hooks/usePointerGlow";
+import { Icon } from "./Icon";
 
 export function WorkspaceSidebar() {
   const {
@@ -20,6 +22,7 @@ export function WorkspaceSidebar() {
     openFolderAndAdd,
   } = useWorkspaceStore();
 
+  const listaRef = usePointerGlow<HTMLDivElement>();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [colorPickerId, setColorPickerId] = useState<string | null>(null);
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null);
@@ -42,18 +45,40 @@ export function WorkspaceSidebar() {
     [updateWorkspace],
   );
 
-  if (!sidebarOpen) return null;
-
+  /**
+   * A gaveta fica sempre montada.
+   *
+   * Desmontar ao fechar torna a animação de saída impossível — o elemento
+   * some no primeiro quadro e a gaveta "pisca" para fora em vez de deslizar.
+   * `inert` devolve o que o desmonte tinha de bom: fechada, ela sai do
+   * alcance do Tab e do leitor de tela, então não existe um botão invisível
+   * capturando o foco no meio da navegação por teclado.
+   *
+   * O `ws-sidebar-inner` tem largura fixa de propósito: sem ele o conteúdo
+   * se espremeria durante os 240ms da animação, e o que se veria seria o
+   * texto refluindo, não a gaveta abrindo.
+   */
   return (
-    <aside className="ws-sidebar">
+    <aside className={`ws-sidebar ${sidebarOpen ? "open" : ""}`} inert={!sidebarOpen}>
+      <div className="ws-sidebar-inner">
       <div className="ws-sidebar-header">
         <span className="ws-sidebar-title">Workspaces</span>
-        <button className="ws-add-btn" onClick={handleAddFolder} title="Abrir pasta (Ctrl+Shift+O)">
-          +
+        <button
+          className="ws-add-btn"
+          onClick={handleAddFolder}
+          title="Abrir pasta (Ctrl+Shift+O)"
+          aria-label="Abrir pasta de projeto"
+        >
+          <Icon name="plus" size={15} />
         </button>
       </div>
 
+      {/* A rolagem fica na caixa de fora e a luz na de dentro, que encolhe
+          até a altura dos itens. Com as duas no mesmo elemento, a mancha
+          preenchia a coluna inteira e acendia 500px de vazio abaixo do
+          último workspace — ambiência bonita iluminando nada. */}
       <div className="ws-list">
+      <div className="ws-list-items fluid-list" ref={listaRef}>
         {workspaces.length === 0 && (
           <div className="ws-empty">
             Nenhum workspace.<br />
@@ -176,7 +201,7 @@ export function WorkspaceSidebar() {
                   : "Auto-iniciar um comando (ex.: claude) em terminais novos"
               }
             >
-              🤖
+              <Icon name="agent" size={14} />
             </button>
 
             <button
@@ -191,7 +216,7 @@ export function WorkspaceSidebar() {
               aria-label={`Remover ${ws.name}`}
               title="Remover workspace"
             >
-              ×
+              <Icon name="close" size={13} />
             </button>
 
             {/* Popover de auto-início de agente */}
@@ -267,6 +292,7 @@ export function WorkspaceSidebar() {
           ),
         )}
       </div>
+      </div>
 
       {/* Botão "Sem workspace" para modo livre */}
       <div className="ws-sidebar-footer">
@@ -275,8 +301,10 @@ export function WorkspaceSidebar() {
           onClick={() => setActiveWorkspace(null)}
           title="Terminais sem workspace vinculado"
         >
-          🏠 Modo livre
+          <Icon name="terminal" size={14} />
+          Modo livre
         </button>
+      </div>
       </div>
     </aside>
   );

@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAiStore } from "../stores/aiStore";
 import { AiSettings } from "./AiSettings";
+import { Icon } from "./Icon";
 
 interface AiPanelProps {
   /** Callback para executar um comando no terminal ativo. */
@@ -73,13 +74,19 @@ export function AiPanel({ onRunCommand, captureContext }: AiPanelProps) {
     [handleSend],
   );
 
-  if (!panelOpen) return null;
-
+  // Sempre montado, pelo mesmo motivo da barra de workspaces: gaveta que
+  // desmonta não desliza para fora, pisca. `inert` tira o conteúdo fechado
+  // do Tab e do leitor de tela — inclusive o campo de texto, que sem isso
+  // roubaria o foco de dentro de um painel invisível.
   return (
-    <aside className="ai-panel">
+    <aside className={`ai-panel ${panelOpen ? "open" : ""}`} inert={!panelOpen}>
+      <div className="ai-panel-inner">
       <div className="ai-panel-header">
         <span className="ai-panel-title">
-          <span className="ai-icon">✦</span> JARVIS AI
+          <span className="ai-icon">
+            <Icon name="spark" size={15} />
+          </span>{" "}
+          JARVIS AI
           {/* Sem isto não havia como saber com quem se está falando sem
               abrir as configurações. */}
           <span className="ai-panel-sub">
@@ -100,10 +107,15 @@ export function AiPanel({ onRunCommand, captureContext }: AiPanelProps) {
                 : "Limpar conversa (Ctrl+Shift+L)"
             }
           >
-            🗑
+            <Icon name="trash" size={15} />
           </button>
-          <button className="ai-header-btn" onClick={toggleSettings} title="Configurações de IA">
-            ⚙
+          <button
+            className="ai-header-btn"
+            onClick={toggleSettings}
+            title="Configurações de IA"
+            aria-label="Configurações de IA"
+          >
+            <Icon name="settings" size={15} />
           </button>
         </div>
       </div>
@@ -113,7 +125,9 @@ export function AiPanel({ onRunCommand, captureContext }: AiPanelProps) {
       <div className="ai-messages">
         {messages.length === 0 && (
           <div className="ai-welcome">
-            <div className="ai-welcome-icon">✦</div>
+            <div className="ai-welcome-icon">
+              <Icon name="spark" size={26} />
+            </div>
             <h3>JARVIS AI</h3>
             <p>Assistente integrado ao seu terminal.</p>
             <p className="ai-welcome-hint">
@@ -125,7 +139,7 @@ export function AiPanel({ onRunCommand, captureContext }: AiPanelProps) {
         {messages.map((msg, i) => (
           <div key={msg.id} className={`ai-msg ai-msg-${msg.role}`}>
             <div className="ai-msg-avatar">
-              {msg.role === "user" ? "👤" : "✦"}
+              <Icon name={msg.role === "user" ? "user" : "spark"} size={14} />
             </div>
             <div className="ai-msg-body">
               <MessageContent content={msg.content} streaming={msg.streaming} onRunCommand={onRunCommand} />
@@ -156,7 +170,8 @@ export function AiPanel({ onRunCommand, captureContext }: AiPanelProps) {
       <div className="ai-input-area">
         {streaming && (
           <button className="ai-cancel-btn" onClick={() => void cancelStream()}>
-            ⏹ Parar geração
+            <Icon name="stop" size={13} />
+            Parar geração
           </button>
         )}
         <div className="ai-input-row">
@@ -175,10 +190,12 @@ export function AiPanel({ onRunCommand, captureContext }: AiPanelProps) {
             onClick={handleSend}
             disabled={!input.trim() || streaming}
             title="Enviar (Enter)"
+            aria-label="Enviar"
           >
-            ➤
+            <Icon name="send" size={15} />
           </button>
         </div>
+      </div>
       </div>
     </aside>
   );
@@ -220,16 +237,18 @@ function MessageContent({ content, streaming, onRunCommand }: MessageContentProp
                     // nenhum ao usuário de que a cópia falhou.
                     onClick={() => void navigator.clipboard.writeText(code).catch(() => {})}
                     title="Copiar"
+                    aria-label="Copiar código"
                   >
-                    📋
+                    <Icon name="copy" size={13} />
                   </button>
                   {isExecutable && onRunCommand && (
                     <button
                       className="ai-code-btn ai-code-run"
                       onClick={() => onRunCommand(code)}
                       title="Executar no terminal"
+                      aria-label="Executar no terminal"
                     >
-                      ▶
+                      <Icon name="play" size={13} />
                     </button>
                   )}
                 </div>
@@ -257,7 +276,10 @@ function MessageContent({ content, streaming, onRunCommand }: MessageContentProp
           </span>
         );
       })}
-      {streaming && <span className="ai-cursor">▋</span>}
+      {/* Cursor de digitação desenhado em CSS, não com o glifo ▋: a barra
+          cheia depende de a fonte tê-la (nem toda tem) e herda a altura da
+          linha, então ela pulava de tamanho conforme o texto ao redor. */}
+      {streaming && <span className="ai-cursor" aria-hidden="true" />}
     </div>
   );
 }

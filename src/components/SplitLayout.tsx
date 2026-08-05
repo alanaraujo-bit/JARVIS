@@ -9,6 +9,7 @@ import {
 import type { SessionInfo } from "../lib/ipc";
 import type { PaneNode } from "../lib/layout";
 import { TerminalView } from "./TerminalView";
+import { Icon } from "./Icon";
 
 interface Props {
   node: PaneNode;
@@ -50,7 +51,12 @@ export function SplitLayout({
 
     return (
       <div
-        className={`split-leaf ${node.id === activePaneId ? "focused" : ""}`}
+        // `multi` acende o anel de foco só quando há painel com quem
+        // disputar: numa aba de painel único a moldura não responde
+        // pergunta nenhuma e vira a coisa mais chamativa da tela.
+        className={`split-leaf ${node.id === activePaneId ? "focused" : ""} ${
+          paneCount > 1 ? "multi" : ""
+        }`}
         onMouseDown={() => onFocusPane(node.id)}
       >
         <TerminalView sessionId={node.sessionId} focused={node.id === activePaneId} />
@@ -59,20 +65,37 @@ export function SplitLayout({
             className="pane-warn"
             title="Não foi possível conter esta sessão num Job Object: processos filhos podem sobreviver ao fechamento deste painel."
           >
-            ⚠
+            <Icon name="warning" size={14} />
           </span>
         )}
         {paneCount > 1 && (
-          <button className="pane-close" title="Fechar painel" onClick={() => onClosePane(node.id)}>
-            ×
+          <button
+            className="pane-close"
+            title="Fechar painel"
+            aria-label="Fechar painel"
+            onClick={() => onClosePane(node.id)}
+          >
+            <Icon name="close" size={13} />
           </button>
         )}
         {dead && (
+          // Véu translúcido + cartão opaco, e não uma laje sólida sobre o
+          // painel inteiro: a última saída do processo é justamente o que
+          // se quer ler quando ele cai sozinho, e cobri-la apagava a única
+          // pista do motivo. O cartão dá ao texto e aos botões o contraste
+          // de qualquer painel do app sem esconder o terminal atrás.
           <div className="pane-overlay">
-            <span>Processo encerrado{info?.exitCode != null ? ` (código ${info.exitCode})` : ""}</span>
-            <div className="pane-overlay-actions">
-              <button onClick={() => onRestartPane(node.id)}>Reiniciar</button>
-              <button onClick={() => onClosePane(node.id)}>Fechar</button>
+            <div className="pane-overlay-card">
+              <span className="pane-overlay-title">
+                Processo encerrado{info?.exitCode != null ? ` (código ${info.exitCode})` : ""}
+              </span>
+              <div className="pane-overlay-actions">
+                <button onClick={() => onRestartPane(node.id)}>
+                  <Icon name="refresh" size={13} />
+                  Reiniciar
+                </button>
+                <button onClick={() => onClosePane(node.id)}>Fechar</button>
+              </div>
             </div>
           </div>
         )}

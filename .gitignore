@@ -6,3 +6,12 @@ src-tauri/gen/schemas/
 .DS_Store
 test-results/
 playwright-report/
+.claude/
+# Chave privada do updater. Se ela vazar, qualquer um assina um "update"
+# que os JARVIS instalados aceitam como legítimo. Mora fora do repo
+# (~/.jarvis/updater.key); este padrão é só a rede de segurança.
+*.key
+*.key.pub
+# Gerado por `npm run release:manifest` a cada versão; a cópia que vale é a
+# anexada à release do GitHub.
+latest.json
