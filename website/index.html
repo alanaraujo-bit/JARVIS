@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JARVIS — Central de terminais e agentes de IA para Windows</title>
+<meta name="description" content="JARVIS é um app nativo para Windows que reúne vários terminais, workspaces e agentes de IA num só lugar. Instalador de 2,5 MB, motor em Rust, zero Chromium embutido." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="grain"></div>
+<div class="scanline"></div>
+
+<!-- NAV -->
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="#top" class="brand">
+      <span class="brand-glyph">J</span>
+      <span class="brand-text">JARVIS</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features">Recursos</a>
+      <a href="#why">Por que Tauri</a>
+      <a href="#how">Como funciona</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn btn-nav" href="#download">
+      <span>Baixar grátis</span>
+    </a>
+    <button class="nav-burger" id="navBurger" aria-label="Abrir menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+  <nav class="nav-mobile" id="navMobile">
+    <a href="#features">Recursos</a>
+    <a href="#why">Por que Tauri</a>
+    <a href="#how">Como funciona</a>
+    <a href="#engineering">Engenharia</a>
+    <a href="#faq">FAQ</a>
+    <a href="#download" class="btn btn-primary nav-mobile-cta">Baixar grátis</a>
+  </nav>
+</header>
+
+<!-- HERO -->
+<section class="hero" id="top">
+  <canvas id="hero-canvas"></canvas>
+  <div class="hero-fade"></div>
+  <div class="container hero-inner">
+    <div class="pill">
+      <span class="pill-dot"></span>
+      100% gratuito &amp; código aberto · feito para Windows 11
+    </div>
+    <h1 class="hero-title">
+      Todos os seus terminais.<br>
+      <span class="grad-text">Um único cérebro de IA.</span>
+    </h1>
+    <p class="hero-sub">
+      JARVIS reúne PowerShell, Git Bash, WSL e CMD numa central com abas,
+      splits e workspaces — com um agente de IA que já sabe em qual pasta
+      você está e o que apareceu no seu terminal.
+    </p>
+    <div class="hero-cta">
+      <a href="#download" class="btn btn-primary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 3v13m0 0l-5-5m5 5l5-5M4 21h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Instalar no Windows
+      </a>
+      <a href="https://github.com/alanaraujo-bit/JARVIS" target="_blank" rel="noopener" class="btn btn-ghost">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.66.5 12.02c0 5.1 3.29 9.42 7.86 10.95.57.11.78-.25.78-.55 0-.27-.01-1.16-.02-2.11-3.2.7-3.88-1.36-3.88-1.36-.52-1.34-1.28-1.7-1.28-1.7-1.04-.72.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.42.36.78 1.07.78 2.16 0 1.56-.01 2.82-.01 3.2 0 .31.2.67.79.55A10.53 10.53 0 0 0 23.5 12c0-6.35-5.15-11.5-11.5-11.5Z"/></svg>
+        Ver no GitHub
+      </a>
+    </div>
+    <div class="hero-stats">
+      <div class="stat"><span class="stat-num">2,5&nbsp;MB</span><span class="stat-label">instalador</span></div>
+      <div class="stat-sep"></div>
+      <div class="stat"><span class="stat-num">5,4&nbsp;MB</span><span class="stat-label">executável</span></div>
+      <div class="stat-sep"></div>
+      <div class="stat"><span class="stat-num">0</span><span class="stat-label">Chromium embutido</span></div>
+      <div class="stat-sep"></div>
+      <div class="stat"><span class="stat-num">4</span><span class="stat-label">provedores de IA</span></div>
+    </div>
+  </div>
+  <div class="scroll-cue"><span></span></div>
+</section>
+
+<!-- SOCIAL PROOF STRIP -->
+<section class="strip">
+  <div class="strip-track">
+    <div class="strip-item">PowerShell&nbsp;7</div>
+    <div class="strip-item">Windows&nbsp;PowerShell</div>
+    <div class="strip-item">Prompt&nbsp;de&nbsp;Comando</div>
+    <div class="strip-item">Git&nbsp;Bash</div>
+    <div class="strip-item">WSL</div>
+    <div class="strip-item">Ollama</div>
+    <div class="strip-item">OpenAI</div>
+    <div class="strip-item">Anthropic</div>
+    <div class="strip-item">Gemini</div>
+    <div class="strip-item">ConPTY</div>
+    <div class="strip-item">xterm.js&nbsp;+&nbsp;WebGL</div>
+    <!-- duplicate for seamless loop -->
+    <div class="strip-item">PowerShell&nbsp;7</div>
+    <div class="strip-item">Windows&nbsp;PowerShell</div>
+    <div class="strip-item">Prompt&nbsp;de&nbsp;Comando</div>
+    <div class="strip-item">Git&nbsp;Bash</div>
+    <div class="strip-item">WSL</div>
+    <div class="strip-item">Ollama</div>
+    <div class="strip-item">OpenAI</div>
+    <div class="strip-item">Anthropic</div>
+    <div class="strip-item">Gemini</div>
+    <div class="strip-item">ConPTY</div>
+    <div class="strip-item">xterm.js&nbsp;+&nbsp;WebGL</div>
+  </div>
+</section>
+
+<!-- WHY -->
+<section class="section" id="why">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">01 — A decisão que muda tudo</span>
+      <h2>Por que Tauri, e não Electron</h2>
+      <p class="section-sub">
+        A maioria dos apps de terminal "modernos" carrega um Chromium inteiro
+        só para desenhar caixas de texto. JARVIS usa o WebView2 que o Windows
+        11 já tem instalado — e um núcleo em Rust puro para tudo que precisa
+        de velocidade de verdade.
+      </p>
+    </div>
+
+    <div class="compare">
+      <div class="compare-col compare-col--jarvis">
+        <div class="compare-badge">JARVIS</div>
+        <div class="compare-row"><span class="compare-label">Instalador</span><span class="compare-val compare-val--good">2,5 MB</span></div>
+        <div class="compare-row"><span class="compare-label">Executável</span><span class="compare-val compare-val--good">5,4 MB</span></div>
+        <div class="compare-row"><span class="compare-label">Motor web</span><span class="compare-val compare-val--good">WebView2 do Windows</span></div>
+        <div class="compare-row"><span class="compare-label">Camada de PTY</span><span class="compare-val compare-val--good">Rust ↔ ConPTY direto</span></div>
+      </div>
+      <div class="compare-vs">vs</div>
+      <div class="compare-col compare-col--other">
+        <div class="compare-badge">Apps Electron</div>
+        <div class="compare-row"><span class="compare-label">Instalador</span><span class="compare-val">~120 MB</span></div>
+        <div class="compare-row"><span class="compare-label">Executável</span><span class="compare-val">dezenas de MB + runtime</span></div>
+        <div class="compare-row"><span class="compare-label">Motor web</span><span class="compare-val">Chromium embutido</span></div>
+        <div class="compare-row"><span class="compare-label">Camada de PTY</span><span class="compare-val">ponte Node → C++</span></div>
+      </div>
+    </div>
+    <p class="compare-footnote">
+      Números medidos com <code>npm run app:build</code>, perfil release com LTO e strip.
+      O núcleo pesado — leitura dos PTYs, buffers, coalescência de eventos — roda
+      em Rust com threads nativas; o WebView cuida só da interface.
+    </p>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section section--alt" id="features">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">02 — O que já funciona</span>
+      <h2>Uma central, não mais um terminal</h2>
+      <p class="section-sub">Cada peça foi construída para o dia a dia de quem vive dentro do terminal.</p>
+    </div>
+
+    <div class="feature-grid">
+      <article class="feature-card feature-card--lg" data-tilt>
+        <div class="feature-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 9l3 3-3 3M13 15h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>Motor de PTY em Rust</h3>
+        <p>Criar, escrever, redimensionar, matar, listar e restaurar sessões falando direto com o ConPTY do Windows. Terminal na tela com xterm.js acelerado por WebGL.</p>
+        <div class="feature-code">
+          <span class="c1">shells</span>: <span class="c2">[</span>"pwsh 7", "PowerShell", "CMD", "Git Bash", "WSL"<span class="c2">]</span>
+        </div>
+      </article>
+
+      <article class="feature-card" data-tilt>
+        <div class="feature-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M4 6h7M4 12h16M4 18h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Abas e painéis</h3>
+        <p>Reordenáveis por arraste, splits horizontais e verticais em árvore, divisores arrastáveis e reinício de shell sem perder o painel.</p>
+      </article>
+
+      <article class="feature-card" data-tilt>
+        <div class="feature-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M3 7l9-4 9 4-9 4-9-4Zm0 5l9 4 9-4M3 17l9 4 9-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>Workspaces</h3>
+        <p>Uma pasta de projeto vira um workspace com nome e cor. Terminais novos nascem no diretório certo e lembram o shell preferido.</p>
+      </article>
+
+      <article class="feature-card feature-card--wide" data-tilt>
+        <div class="feature-icon feature-icon--accent">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4L12 2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>Agente de IA com contexto real</h3>
+        <p>Chat com streaming token a token, falando com Ollama, OpenAI, Anthropic ou Gemini. O agente recebe a pasta do workspace, o shell ativo e as últimas linhas visíveis do terminal — cole um erro de build e pergunte "o que é isso?". Blocos de código sugeridos rodam direto no terminal ativo.</p>
+        <div class="feature-tags">
+          <span>Ollama</span><span>OpenAI</span><span>Anthropic</span><span>Gemini</span>
+        </div>
+      </article>
+
+      <article class="feature-card" data-tilt>
+        <div class="feature-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Paleta de comandos</h3>
+        <p><kbd>Ctrl+Shift+P</kbd> com busca por subsequência para chegar em qualquer ação sem tirar as mãos do teclado.</p>
+      </article>
+
+      <article class="feature-card" data-tilt>
+        <div class="feature-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M12 20V4M20 20v-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Estatísticas de uso</h3>
+        <p><kbd>Ctrl+Shift+S</kbd> abre um dashboard alimentado pelos contadores que o motor de PTY já mantém — sem telemetria, tudo local.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section" id="how">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">03 — Do zero ao terminal</span>
+      <h2>Três passos e você já está dentro</h2>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <h3>Baixe o instalador</h3>
+        <p>Um único <code>.exe</code> de 2,5 MB, assinado, sem dependências extras para instalar antes.</p>
+      </div>
+      <div class="step-line"></div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <h3>Abra e conecte sua IA</h3>
+        <p>Aponte para uma pasta de projeto, escolha seu shell preferido e conecte Ollama local ou a chave de API que você já usa.</p>
+      </div>
+      <div class="step-line"></div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <h3>Trabalhe em vários terminais ao mesmo tempo</h3>
+        <p>Abas, splits, workspaces coloridos — e um agente que já sabe onde você está.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ENGINEERING DEEP CUTS -->
+<section class="section section--alt" id="engineering">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">04 — Detalhes que só importam quando dão errado</span>
+      <h2>Construído por gente que leu o manual do ConPTY até o fim</h2>
+      <p class="section-sub">Um punhado dos problemas reais que apareceram no caminho — e como foram resolvidos.</p>
+    </div>
+    <div class="deepcuts">
+      <div class="deepcut">
+        <h4>O ConPTY segura o processo filho até alguém responder</h4>
+        <p>O conhost manda uma consulta de posição de cursor e bloqueia o filho até ser respondido. O backend responde ao handshake no instante em que ele aparece, para nenhuma aba nascer congelada.</p>
+      </div>
+      <div class="deepcut">
+        <h4>Um chunk de HTTP não é uma linha</h4>
+        <p>Respostas de IA chegam picadas por tamanho de pacote — um caractere acentuado pode ter seus bytes divididos entre chunks. Um buffer de bytes garante que só linhas completas sejam entregues.</p>
+      </div>
+      <div class="deepcut">
+        <h4>Cancelar precisa acordar a leitura, não só marcar uma flag</h4>
+        <p>Uma flag consultada entre chunks não tem efeito num fluxo parado. O cancelamento usa um <code>Notify</code> que interrompe a espera na hora, com watchdog de inatividade como rede de segurança.</p>
+      </div>
+      <div class="deepcut">
+        <h4>Config é salvo por fatias, não inteiro</h4>
+        <p>Cada tela grava só a sua fatia do estado, com merge sob lock no backend — assim duas telas gravando ao mesmo tempo não se apagam.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DOWNLOAD -->
+<section class="download" id="download">
+  <canvas id="download-canvas"></canvas>
+  <div class="container download-inner">
+    <span class="eyebrow eyebrow--light">05 — Bora começar</span>
+    <h2 class="download-title">Seu terminal está pronto para ficar mais inteligente.</h2>
+    <p class="download-sub">Grátis, código aberto, sem telemetria. Windows 11, alguns segundos de instalação.</p>
+    <a href="https://github.com/alanaraujo-bit/JARVIS/releases/latest" target="_blank" rel="noopener" class="btn btn-primary btn-xl">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3v13m0 0l-5-5m5 5l5-5M4 21h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Baixar JARVIS para Windows
+    </a>
+    <p class="download-meta">JARVIS_0.1.0_x64-setup.exe · requer Windows 11</p>
+    <p class="download-hint-mobile">
+      Está no celular? Copie o link desta página e abra no seu PC com Windows 11 para instalar.
+    </p>
+
+    <div class="download-alt">
+      <a href="https://github.com/alanaraujo-bit/JARVIS" target="_blank" rel="noopener">Ver código-fonte</a>
+      <span>·</span>
+      <a href="https://github.com/alanaraujo-bit/JARVIS#rodando" target="_blank" rel="noopener">Rodar a partir do código</a>
+      <span>·</span>
+      <a href="https://github.com/alanaraujo-bit/JARVIS/issues" target="_blank" rel="noopener">Reportar um problema</a>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section" id="faq">
+  <div class="container container--narrow">
+    <div class="section-head">
+      <span class="eyebrow">06 — Perguntas</span>
+      <h2>Antes de instalar</h2>
+    </div>
+    <div class="faq-list">
+      <details class="faq-item" open>
+        <summary>É de graça mesmo?</summary>
+        <p>Sim. JARVIS é código aberto sob os termos do repositório no GitHub. Você pode instalar, usar e ler cada linha do que roda na sua máquina.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Preciso de uma chave de API para usar?</summary>
+        <p>Não. O agente de IA funciona com Ollama rodando localmente na sua máquina — sem custo e sem dados saindo do seu computador. Se preferir, conecte OpenAI, Anthropic ou Gemini com sua própria chave.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Funciona em macOS ou Linux?</summary>
+        <p>Hoje o motor de PTY fala diretamente com o ConPTY do Windows, então o foco é Windows 11. O código é aberto — contribuições para outras plataformas são bem-vindas.</p>
+      </details>
+      <details class="faq-item">
+        <summary>O JARVIS manda meus dados para algum servidor?</summary>
+        <p>Não há telemetria. O que roda localmente fica local; o que sai é só o que você mesmo envia para o provedor de IA que escolheu conectar.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Como desinstalo?</summary>
+        <p>Como qualquer app Windows normal: Configurações → Aplicativos → JARVIS → Desinstalar. O instalador NSIS cuida de remover tudo.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <span class="brand-glyph">J</span>
+      <span class="brand-text">JARVIS</span>
+    </div>
+    <p class="footer-tag">Central de terminais e agentes de IA para Windows.</p>
+    <div class="footer-links">
+      <a href="https://github.com/alanaraujo-bit/JARVIS" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/alanaraujo-bit/JARVIS/releases/latest" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/alanaraujo-bit/JARVIS/issues" target="_blank" rel="noopener">Issues</a>
+    </div>
+    <p class="footer-copy">Feito com Rust, Tauri e café. © 2026 JARVIS.</p>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
