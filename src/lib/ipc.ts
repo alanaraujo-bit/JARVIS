@@ -12,6 +12,7 @@ export interface SpawnOptions {
   rows?: number;
   title?: string;
   profileId?: string;
+  initialCommand?: string;
 }
 
 export interface SessionInfo {
@@ -189,6 +190,7 @@ export interface WorkspaceConfigPayload {
   path: string;
   color: string;
   defaultProfileId: string | null;
+  autoCommand?: string | null;
   createdAt: number;
 }
 
@@ -208,6 +210,8 @@ export interface AppConfig {
    * lê em vez de confiar no tipo.
    */
   layout?: unknown;
+  /** Histórico recente de sessões de terminal, também JSON opaco (veja `src/lib/sessionHistory.ts`). */
+  sessionHistory?: unknown;
 }
 
 /**
@@ -221,6 +225,25 @@ export type ConfigPatch = Partial<Omit<AppConfig, "ui">> & {
    * `sidebarOpen` e o painel de IA é dono de `aiPanelOpen`. */
   ui?: Partial<UiConfigPayload>;
 };
+
+/**
+ * Roda `flush` antes da janela realmente fechar e só então deixa o
+ * fechamento seguir. Sem isto, sessões ainda abertas no momento do
+ * "X"/Alt+F4 nunca são marcadas como encerradas no histórico — a próxima
+ * abertura as trataria como órfãs de uma queda, mesmo num fechamento normal.
+ */
+export async function onWindowCloseFlush(flush: () => Promise<void>): Promise<UnlistenFn> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const win = getCurrentWindow();
+  return win.onCloseRequested(async (event) => {
+    event.preventDefault();
+    try {
+      await flush();
+    } finally {
+      void win.destroy();
+    }
+  });
+}
 
 export const configLoad = () => invoke<AppConfig>("config_load");
 
@@ -285,3 +308,38 @@ export const onAiDone = (requestId: string, cb: () => void) =>
 
 export const onAiError = (requestId: string, cb: (error: string) => void) =>
   listen<AiErrorEvent>(`ai:error:${requestId}`, (e) => cb(e.payload.error));
+
+/* ------------------------- uso do Claude Code --------------------------- */
+
+export interface ModelUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  costUsd: number;
+}
+
+export interface ClaudeUsageSummary {
+  currentModel: string | null;
+  currentEffort: string | null;
+  byModel: ModelUsage[];
+  tokensLast5h: number;
+  tokensLast24h: number;
+  costLast5hUsd: number;
+  costTotalUsd: number;
+  totalEvents: number;
+  noData: boolean;
+}
+
+export interface ClaudeSettings {
+  model: string | null;
+  effortLevel: string | null;
+}
+
+export const claudeUsageSummary = () => invoke<ClaudeUsageSummary>("claude_usage_summary");
+
+export const claudeSettingsGet = () => invoke<ClaudeSettings>("claude_settings_get");
+
+export const claudeSettingsSet = (model?: string, effortLevel?: string) =>
+  invoke<void>("claude_settings_set", { model, effortLevel });

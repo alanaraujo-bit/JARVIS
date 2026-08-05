@@ -12,6 +12,11 @@ export interface Workspace {
   color: string;
   /** Perfil de shell preferido ao abrir terminais neste workspace. */
   defaultProfileId: string | null;
+  /**
+   * Comando digitado automaticamente assim que um terminal deste workspace
+   * termina de abrir (ex.: "claude"). `null`/vazio desliga o auto-início.
+   */
+  autoCommand: string | null;
   /** Epoch em ms. */
   createdAt: number;
 }
@@ -51,6 +56,7 @@ export function createWorkspace(
     path,
     color: nextColor(existingCount),
     defaultProfileId: null,
+    autoCommand: null,
     createdAt: Date.now(),
   };
 }

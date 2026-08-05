@@ -36,6 +36,11 @@ pub struct SpawnOptions {
     /// Identificador do perfil de shell usado (para estatísticas).
     #[serde(default)]
     pub profile_id: Option<String>,
+    /// Comando digitado automaticamente assim que o shell fica pronto
+    /// (ex.: "claude"), para poupar o usuário de abrir o terminal e ter
+    /// que iniciar o agente na mão toda vez.
+    #[serde(default)]
+    pub initial_command: Option<String>,
 }
 
 fn default_cols() -> u16 {

@@ -23,6 +23,9 @@ export function WorkspaceSidebar() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [colorPickerId, setColorPickerId] = useState<string | null>(null);
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null);
+  const [agentPickerId, setAgentPickerId] = useState<string | null>(null);
+
+  const AGENT_PRESETS = ["claude", "claude --resume", "codex"];
   const dragFrom = useRef<number | null>(null);
   const reorder = useWorkspaceStore((s) => s.reorderWorkspaces);
 
@@ -160,6 +163,23 @@ export function WorkspaceSidebar() {
             </div>
 
             <button
+              className={`ws-agent-btn ${ws.autoCommand ? "active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setAgentPickerId(agentPickerId === ws.id ? null : ws.id);
+                setColorPickerId(null);
+              }}
+              aria-label={`Auto-iniciar comando em ${ws.name}`}
+              title={
+                ws.autoCommand
+                  ? `Auto-inicia: ${ws.autoCommand}`
+                  : "Auto-iniciar um comando (ex.: claude) em terminais novos"
+              }
+            >
+              🤖
+            </button>
+
+            <button
               className="ws-remove-btn"
               onClick={(e) => {
                 e.stopPropagation();
@@ -174,6 +194,58 @@ export function WorkspaceSidebar() {
               ×
             </button>
 
+            {/* Popover de auto-início de agente */}
+            {agentPickerId === ws.id && (
+              <div className="ws-agent-picker" onClick={(e) => e.stopPropagation()}>
+                <span className="ws-agent-picker-label">
+                  Iniciar automaticamente em terminais novos:
+                </span>
+                <input
+                  className="ws-agent-picker-input"
+                  autoFocus
+                  defaultValue={ws.autoCommand ?? ""}
+                  placeholder="ex.: claude (vazio = desligado)"
+                  onClick={(e) => e.stopPropagation()}
+                  onBlur={(e) =>
+                    updateWorkspace(ws.id, { autoCommand: e.currentTarget.value.trim() || null })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      updateWorkspace(ws.id, {
+                        autoCommand: e.currentTarget.value.trim() || null,
+                      });
+                      setAgentPickerId(null);
+                    }
+                    if (e.key === "Escape") setAgentPickerId(null);
+                  }}
+                />
+                <div className="ws-agent-picker-presets">
+                  {AGENT_PRESETS.map((cmd) => (
+                    <button
+                      key={cmd}
+                      className={`ws-agent-preset ${ws.autoCommand === cmd ? "selected" : ""}`}
+                      onClick={() => {
+                        updateWorkspace(ws.id, { autoCommand: cmd });
+                        setAgentPickerId(null);
+                      }}
+                    >
+                      {cmd}
+                    </button>
+                  ))}
+                  {ws.autoCommand && (
+                    <button
+                      className="ws-agent-preset ws-agent-preset-off"
+                      onClick={() => {
+                        updateWorkspace(ws.id, { autoCommand: null });
+                        setAgentPickerId(null);
+                      }}
+                    >
+                      Desligar
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Mini-paleta de cores */}
             {colorPickerId === ws.id && (

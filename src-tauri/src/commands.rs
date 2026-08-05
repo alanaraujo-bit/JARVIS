@@ -280,3 +280,20 @@ pub async fn ai_models(
     ai.list_models(config.unwrap_or_else(|| config_mgr.ai()))
         .await
 }
+
+/* --------------------------- uso do Claude Code --------------------------- */
+
+#[tauri::command(async)]
+pub fn claude_usage_summary() -> crate::claude_usage::UsageSummary {
+    crate::claude_usage::summarize_usage()
+}
+
+#[tauri::command(async)]
+pub fn claude_settings_get() -> crate::claude_usage::ClaudeSettings {
+    crate::claude_usage::read_settings()
+}
+
+#[tauri::command(async)]
+pub fn claude_settings_set(model: Option<String>, effort_level: Option<String>) -> Result<()> {
+    crate::claude_usage::write_settings(model, effort_level)
+}

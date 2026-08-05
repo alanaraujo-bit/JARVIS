@@ -5,10 +5,35 @@
  * instrumentado a mais para esta tela existir.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { SessionInfo } from "../lib/ipc";
+import {
+  claudeSettingsSet,
+  claudeUsageSummary,
+  type ClaudeUsageSummary,
+  type SessionInfo,
+} from "../lib/ipc";
 import { computeStats, formatBytes, formatDuration } from "../lib/stats";
+
+/** Câmbio aproximado só pra dar uma ordem de grandeza em reais — não é cotação ao vivo. */
+const USD_TO_BRL_APROX = 5.4;
+
+const MODELOS_SUGERIDOS = ["sonnet", "opus", "haiku", "claude-sonnet-5", "claude-opus-5"];
+const ESFORCOS_SUGERIDOS = ["low", "medium", "high", "max"];
+
+function formatUsd(v: number): string {
+  return `US$ ${v.toFixed(v < 1 ? 4 : 2)}`;
+}
+
+function formatBrl(v: number): string {
+  return `R$ ${(v * USD_TO_BRL_APROX).toFixed(v < 1 ? 3 : 2)}`;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
 
 interface Props {
   open: boolean;
@@ -40,6 +65,56 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
   }, [open]);
 
   const stats = useMemo(() => computeStats(sessions, agora), [sessions, agora]);
+
+  /* --------------------------- uso do Claude Code ------------------------ */
+  const [claude, setClaude] = useState<ClaudeUsageSummary | null>(null);
+  const [claudeErro, setClaudeErro] = useState<string | null>(null);
+  const [pendenteModelo, setPendenteModelo] = useState("");
+  const [pendenteEsforco, setPendenteEsforco] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  // Ignora uma resposta que chegue depois de outra mais nova (painel fechado
+  // e reaberto rápido o bastante pra dois `claudeUsageSummary()` se
+  // sobreporem) — sem isto a resposta velha podia sobrescrever o formulário
+  // com valores desatualizados por cima do que o usuário já estava vendo.
+  const requisicaoRef = useRef(0);
+
+  const carregarClaude = useCallback(() => {
+    const minha = ++requisicaoRef.current;
+    void claudeUsageSummary()
+      .then((s) => {
+        if (requisicaoRef.current !== minha) return;
+        setClaude(s);
+        setClaudeErro(null);
+        setPendenteModelo(s.currentModel ?? "");
+        setPendenteEsforco(s.currentEffort ?? "");
+      })
+      .catch((e) => {
+        if (requisicaoRef.current !== minha) return;
+        setClaudeErro(String(e));
+      });
+  }, []);
+
+  useEffect(() => {
+    if (open) carregarClaude();
+  }, [open, carregarClaude]);
+
+  const aplicarModeloEsforco = useCallback(async () => {
+    const modelo = pendenteModelo.trim();
+    const esforco = pendenteEsforco.trim();
+    setSalvando(true);
+    try {
+      await claudeSettingsSet(modelo || undefined, esforco || undefined);
+      carregarClaude();
+    } catch (e) {
+      setClaudeErro(String(e));
+    } finally {
+      setSalvando(false);
+    }
+  }, [pendenteModelo, pendenteEsforco, carregarClaude]);
+
+  const mudouConfig =
+    !!claude && (pendenteModelo !== (claude.currentModel ?? "") || pendenteEsforco !== (claude.currentEffort ?? ""));
   // A barra tem que medir a mesma coisa que o número ao lado dela (bytes),
   // não a contagem de sessões: com uma sessão por shell — o caso comum —
   // `sessions / maiorUso` dava 100% para todo mundo, e a barra virava um
@@ -103,6 +178,96 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
               </span>
             </div>
           ))}
+        </div>
+
+        <div className="stats-section">
+          <h3>Claude Code</h3>
+
+          {claudeErro && <p className="stats-empty">Não foi possível ler o uso local: {claudeErro}</p>}
+
+          {!claudeErro && claude?.noData && (
+            <p className="stats-empty">
+              Nenhum histórico do Claude Code encontrado em <code>~/.claude/projects</code>.
+            </p>
+          )}
+
+          {!claudeErro && claude && !claude.noData && (
+            <>
+              <div className="stats-grid">
+                <Cartao rotulo="Tokens (últimas 5h)" valor={formatTokens(claude.tokensLast5h)} />
+                <Cartao rotulo="Tokens (24h)" valor={formatTokens(claude.tokensLast24h)} />
+                <Cartao rotulo="Custo estimado (5h)" valor={formatUsd(claude.costLast5hUsd)} />
+                <Cartao
+                  rotulo="Custo estimado (total)"
+                  valor={`${formatUsd(claude.costTotalUsd)} · ${formatBrl(claude.costTotalUsd)}`}
+                />
+              </div>
+
+              {claude.byModel.length > 0 && (
+                <div className="stats-claude-models">
+                  {claude.byModel.map((m) => (
+                    <div key={m.model} className="stats-bar-row">
+                      <span className="stats-bar-label" title={m.model}>
+                        {m.model}
+                      </span>
+                      <span className="stats-bar-value">
+                        {formatTokens(m.inputTokens + m.outputTokens)} tok · {formatUsd(m.costUsd)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="stats-note stats-note-tight">
+                Custo é uma ESTIMATIVA nossa (tokens × tabela de preço pública por modelo) — não é
+                um extrato oficial da Anthropic, e o câmbio em reais é aproximado.
+              </p>
+            </>
+          )}
+
+          <div className="stats-claude-config">
+            <label className="stats-claude-field">
+              <span>Modelo</span>
+              <input
+                list="stats-claude-modelos"
+                value={pendenteModelo}
+                onChange={(e) => setPendenteModelo(e.target.value)}
+                placeholder="ex.: sonnet"
+              />
+              <datalist id="stats-claude-modelos">
+                {MODELOS_SUGERIDOS.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            </label>
+
+            <label className="stats-claude-field">
+              <span>Esforço</span>
+              <input
+                list="stats-claude-esforcos"
+                value={pendenteEsforco}
+                onChange={(e) => setPendenteEsforco(e.target.value)}
+                placeholder="ex.: high"
+              />
+              <datalist id="stats-claude-esforcos">
+                {ESFORCOS_SUGERIDOS.map((e) => (
+                  <option key={e} value={e} />
+                ))}
+              </datalist>
+            </label>
+
+            <button
+              className="chip"
+              disabled={!mudouConfig || salvando}
+              onClick={() => void aplicarModeloEsforco()}
+            >
+              {salvando ? "Aplicando…" : "Aplicar"}
+            </button>
+          </div>
+          <p className="stats-note stats-note-tight">
+            Grava direto em <code>~/.claude/settings.json</code> — vale para a próxima vez que a
+            CLI <code>claude</code> for iniciada num terminal.
+          </p>
         </div>
 
         <p className="stats-note">

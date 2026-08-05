@@ -100,6 +100,7 @@ fn opts(program: &str, args: &[&str]) -> SpawnOptions {
         rows: 30,
         title: None,
         profile_id: None,
+        initial_command: None,
     }
 }
 

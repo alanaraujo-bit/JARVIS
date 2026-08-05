@@ -104,6 +104,7 @@ export function installDevMock(): void {
   // A configuração vive em memória e sobrevive ao F5 via localStorage, para
   // o comportamento de persistência poder ser exercitado no navegador.
   const CONFIG_KEY = "jarvis-dev-config";
+  const CLAUDE_SETTINGS_KEY = "jarvis-dev-claude-settings";
   const configPadrao = {
     workspaces: [],
     activeWorkspaceId: null,
@@ -194,10 +195,20 @@ export function installDevMock(): void {
       };
       sessions.set(id, s);
       salvaSessoes();
+      const comandoInicial = (opts.initialCommand as string | undefined)?.trim();
       // Assíncrono como o de verdade: o painel monta antes do primeiro byte.
       setTimeout(() => {
         escreve(s, `JARVIS — ${s.title} (backend simulado)`);
         escreve(s, prompt(s));
+        // Espelha o `type_command` do backend real: digita sozinho depois do
+        // prompt aparecer, como se o usuário tivesse acabado de teclar.
+        if (comandoInicial) {
+          setTimeout(() => {
+            if (!s.alive) return;
+            escreve(s, comandoInicial);
+            executa(s, comandoInicial);
+          }, 200);
+        }
       }, 30);
       return { ...s, buffer: undefined };
     },
@@ -277,6 +288,38 @@ export function installDevMock(): void {
       };
       localStorage.setItem(CONFIG_KEY, JSON.stringify(merged));
       return merged;
+    },
+
+    claude_usage_summary: () => ({
+      currentModel: (JSON.parse(localStorage.getItem(CLAUDE_SETTINGS_KEY) ?? "{}").model as string) ?? "sonnet",
+      currentEffort: (JSON.parse(localStorage.getItem(CLAUDE_SETTINGS_KEY) ?? "{}").effortLevel as string) ?? "low",
+      byModel: [
+        {
+          model: "claude-sonnet-5",
+          inputTokens: 1015,
+          outputTokens: 181960,
+          cacheCreationTokens: 886921,
+          cacheReadTokens: 60444504,
+          costUsd: 24.19,
+        },
+      ],
+      tokensLast5h: 12138,
+      tokensLast24h: 182975,
+      costLast5hUsd: 1.87,
+      costTotalUsd: 24.19,
+      totalEvents: 508,
+      noData: false,
+    }),
+
+    claude_settings_get: () => JSON.parse(localStorage.getItem(CLAUDE_SETTINGS_KEY) ?? "{}"),
+
+    claude_settings_set: (args) => {
+      const { model, effortLevel } = args as unknown as { model?: string; effortLevel?: string };
+      const atual = JSON.parse(localStorage.getItem(CLAUDE_SETTINGS_KEY) ?? "{}");
+      if (model) atual.model = model;
+      if (effortLevel) atual.effortLevel = effortLevel;
+      localStorage.setItem(CLAUDE_SETTINGS_KEY, JSON.stringify(atual));
+      return null;
     },
 
     open_folder_dialog: () => {

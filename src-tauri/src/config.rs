@@ -119,6 +119,10 @@ pub struct WorkspaceConfig {
     pub color: String,
     #[serde(default)]
     pub default_profile_id: Option<String>,
+    /// Comando digitado automaticamente ao abrir um terminal neste workspace
+    /// (ex.: "claude"). `None`/vazio desliga o auto-início.
+    #[serde(default)]
+    pub auto_command: Option<String>,
     /// Epoch em milissegundos. `u64` e não `i64`: o front sempre manda
     /// `Date.now()`, que nunca é negativo.
     #[serde(default)]
@@ -183,6 +187,12 @@ pub struct AppConfig {
     /// então um arranjo obsoleto é descartado pelo front na leitura.
     #[serde(default)]
     pub layout: Option<serde_json::Value>,
+    /// Histórico recente de sessões de terminal abertas (JSON opaco, mesma
+    /// lógica do `layout`): permite ao front avisar "isso ficou aberto da
+    /// última vez" quando o app fecha sem passar pelo `pty_close` de cada
+    /// aba (crash, Alt+F4, encerrar pelo gerenciador de tarefas).
+    #[serde(default)]
+    pub session_history: Option<serde_json::Value>,
 }
 
 /// Fatia parcial do config. Cada tela manda só o que ela é dona; um `None`
@@ -205,6 +215,8 @@ pub struct ConfigPatch {
     pub ui: Option<UiPatch>,
     #[serde(default)]
     pub layout: Option<serde_json::Value>,
+    #[serde(default)]
+    pub session_history: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -236,6 +248,9 @@ impl AppConfig {
         }
         if let Some(l) = patch.layout {
             self.layout = Some(l);
+        }
+        if let Some(h) = patch.session_history {
+            self.session_history = Some(h);
         }
         if let Some(ui) = patch.ui {
             if let Some(v) = ui.sidebar_open {
@@ -407,6 +422,7 @@ mod tests {
                 path: "C:/p".into(),
                 color: "#fff".into(),
                 default_profile_id: None,
+                auto_command: None,
                 created_at: 1,
             }]),
             ..Default::default()

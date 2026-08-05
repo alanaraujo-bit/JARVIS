@@ -247,6 +247,28 @@ impl Session {
         }
     }
 
+    /// Digita um comando no PTY como se o usuário o tivesse feito, seguido de
+    /// Enter. Usado para iniciar automaticamente um agente (ex.: `claude`)
+    /// assim que o shell termina de nascer.
+    fn type_command(&self, cmd: &str) {
+        // `cmd` vem do config.json (workspace.autoCommand), não de digitação
+        // ao vivo: um `\r`/`\n` embutido ali - edição manual do arquivo,
+        // config corrompido, uma futura feature de import - viraria "tecla
+        // Enter" no meio da string e encadearia um segundo comando arbitrário
+        // no shell. Uma linha só, sempre.
+        let linha_unica: String = cmd.chars().filter(|c| *c != '\r' && *c != '\n').collect();
+        if linha_unica.is_empty() {
+            return;
+        }
+        if let Some(w) = self.writer.lock().as_mut() {
+            let _ = w.write_all(linha_unica.as_bytes());
+            let _ = w.write_all(b"\r");
+            let _ = w.flush();
+        }
+        self.bytes_in
+            .fetch_add((linha_unica.len() + 1) as u64, Ordering::Relaxed);
+    }
+
     /// Menor tamanho entre os paineis abertos, ou `None` se nenhum se declarou.
     ///
     /// `min(cols)` e `min(rows)` sao calculados de forma independente: o
@@ -466,7 +488,13 @@ impl PtyManager {
         self.sessions.lock().insert(id.clone(), Arc::clone(&session));
 
         let (reader_done_tx, reader_done_rx) = mpsc::channel::<()>();
-        self.start_reader(id.clone(), Arc::clone(&session), reader, reader_done_tx)?;
+        self.start_reader(
+            id.clone(),
+            Arc::clone(&session),
+            reader,
+            reader_done_tx,
+            opts.initial_command.clone(),
+        )?;
         self.start_waiter(id.clone(), session, child, reader_done_rx)?;
 
         Ok(info)
@@ -478,6 +506,7 @@ impl PtyManager {
         session: Arc<Session>,
         mut reader: Box<dyn Read + Send>,
         done: mpsc::Sender<()>,
+        initial_command: Option<String>,
     ) -> Result<()> {
         let pending = Arc::clone(&self.pending);
         std::thread::Builder::new()
@@ -485,6 +514,7 @@ impl PtyManager {
             .spawn(move || {
                 let mut buf = vec![0u8; 64 * 1024];
                 let mut handshake = Handshake::default();
+                let mut command_sent = false;
                 let (lock, cvar) = &*pending;
 
                 let publish = |chunk: &[u8]| {
@@ -501,7 +531,22 @@ impl PtyManager {
                     match reader.read(&mut buf) {
                         Ok(0) => break,
                         Ok(n) => {
+                            let was_done = handshake.done;
                             let out = handshake.filter(&buf[..n], || session.reply_dsr());
+                            if !was_done && handshake.done && !command_sent {
+                                command_sent = true;
+                                // O handshake do ConPTY resolvido é o sinal mais cedo e
+                                // confiável de que o processo filho já está rodando. Um
+                                // pequeno atraso extra evita que o comando se misture com
+                                // o banner/prompt inicial que o shell ainda está imprimindo.
+                                if let Some(cmd) = initial_command.clone() {
+                                    let sess = Arc::clone(&session);
+                                    std::thread::spawn(move || {
+                                        std::thread::sleep(Duration::from_millis(200));
+                                        sess.type_command(&cmd);
+                                    });
+                                }
+                            }
                             publish(&out);
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,

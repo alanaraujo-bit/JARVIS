@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod claude_usage;
 pub mod commands;
 pub mod config;
 pub mod error;
@@ -51,6 +52,9 @@ pub fn run() {
             commands::ai_chat,
             commands::ai_cancel,
             commands::ai_models,
+            commands::claude_usage_summary,
+            commands::claude_settings_get,
+            commands::claude_settings_set,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::Destroyed = event {

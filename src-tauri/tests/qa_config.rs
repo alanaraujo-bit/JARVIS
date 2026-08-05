@@ -37,6 +37,7 @@ fn round_trip_real_em_disco_preserva_tudo() {
             path: r"C:\Users\Alan\Videos\JARVIS".into(),
             color: "#5eead4".into(),
             default_profile_id: Some("pwsh".into()),
+            auto_command: Some("claude".into()),
             created_at: 1_754_000_000_000,
         }],
         active_workspace_id: Some("w1".into()),
@@ -53,6 +54,7 @@ fn round_trip_real_em_disco_preserva_tudo() {
             ai_panel_open: false,
         },
         layout: Some(serde_json::json!({"tipo":"split","filhos":[1,2]})),
+        session_history: None,
     };
 
     fs::write(&arquivo, serde_json::to_string_pretty(&original).unwrap()).unwrap();
@@ -63,6 +65,7 @@ fn round_trip_real_em_disco_preserva_tudo() {
     assert_eq!(lido.workspaces[0].path, r"C:\Users\Alan\Videos\JARVIS");
     assert_eq!(lido.workspaces[0].created_at, 1_754_000_000_000);
     assert_eq!(lido.workspaces[0].default_profile_id.as_deref(), Some("pwsh"));
+    assert_eq!(lido.workspaces[0].auto_command.as_deref(), Some("claude"));
     assert_eq!(lido.active_workspace_id.as_deref(), Some("w1"));
     assert_eq!(lido.ai.provider, AiProvider::Anthropic);
     assert_eq!(lido.ai.temperature, 0.35);
@@ -83,6 +86,7 @@ fn as_chaves_gravadas_sao_camel_case_como_o_front_espera() {
             path: "p".into(),
             color: "#fff".into(),
             default_profile_id: None,
+            auto_command: None,
             created_at: 7,
         }],
         ..Default::default()

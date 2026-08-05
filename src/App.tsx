@@ -12,11 +12,13 @@ import { useAiStore } from "./stores/aiStore";
 import { buildAiContext, buildSystemPrompt, captureTerminalLines } from "./lib/aiContext";
 import { getTerminal } from "./lib/terminalRegistry";
 import { parseLayout, restoreLayout } from "./lib/restoreLayout";
+import { findOrphans, parseHistory, pruneHistory, type HistoryEntry } from "./lib/sessionHistory";
 import {
   appHomeDir,
   configLoad,
   configSave,
   onPtyExit,
+  onWindowCloseFlush,
   ptyClose,
   ptyList,
   ptyResetViews,
@@ -115,6 +117,45 @@ export default function App() {
   homeRef.current = home;
   const profilesRef = useRef(profiles);
   profilesRef.current = profiles;
+  const workspacesRef = useRef(workspaces);
+  workspacesRef.current = workspaces;
+  const activeWorkspaceIdRef = useRef(activeWorkspaceId);
+  activeWorkspaceIdRef.current = activeWorkspaceId;
+
+  /**
+   * Histórico leve de sessões (workspace, pasta, comando) — não as sessões em
+   * si, que morrem com o processo do app. Serve pra avisar, na próxima
+   * abertura, o que ficou pendurado quando o app fechou sem passar pelo
+   * `pty_close` de cada aba (Alt+F4, queda, "Encerrar tarefa").
+   */
+  const historyRef = useRef<HistoryEntry[]>([]);
+  const [recovery, setRecovery] = useState<HistoryEntry[]>([]);
+  // Encadeia os saves em vez de disparar cada um solto: duas ações rápidas
+  // (abrir um terminal, fechar outro) geram dois `configSave` cujas respostas
+  // podem chegar fora de ordem — sem fila, a mais lenta sobrescreveria a mais
+  // nova no disco com um snapshot velho.
+  const historySaveChainRef = useRef<Promise<unknown>>(Promise.resolve());
+
+  const persistHistory = useCallback(() => {
+    historyRef.current = pruneHistory(historyRef.current);
+    const snapshot = historyRef.current;
+    historySaveChainRef.current = historySaveChainRef.current.then(() =>
+      configSave({ sessionHistory: snapshot }).catch(() => {}),
+    );
+  }, []);
+
+  const markHistoryEnded = useCallback(
+    (id: string) => {
+      let mudou = false;
+      historyRef.current = historyRef.current.map((e) => {
+        if (e.id !== id || e.endedAt !== null) return e;
+        mudou = true;
+        return { ...e, endedAt: Date.now() };
+      });
+      if (mudou) persistHistory();
+    },
+    [persistHistory],
+  );
 
   useEffect(() => {
     void shellsDetect().then(setProfiles).catch((e) => setError(String(e)));
@@ -180,13 +221,62 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Carrega o histórico e descobre "órfãs": entradas que a última execução
+   * nunca marcou como encerradas e que não estão entre as sessões vivas
+   * agora. Isso só é diferente de vazio quando o app inteiro foi fechado sem
+   * passar pelo `pty_close` — recarregar a página (F5/HMR) reconcilia as
+   * mesmas sessões vivas acima e não gera órfã nenhuma.
+   */
+  useEffect(() => {
+    void (async () => {
+      const [cfg, existentes] = await Promise.all([
+        configLoad().catch(() => null),
+        ptyList().catch(() => []),
+      ]);
+      const entries = parseHistory(cfg?.sessionHistory);
+      historyRef.current = entries;
+      const aliveIds = new Set(existentes.map((s) => s.id));
+      const orfas = findOrphans(entries, aliveIds);
+      if (orfas.length > 0) setRecovery(orfas);
+    })();
+  }, []);
+
   useEffect(() => {
     const p = onPtyExit((e) => {
+      markHistoryEnded(e.id);
       setSessions((prev) => {
         const existing = prev[e.id];
         if (!existing) return prev;
         return { ...prev, [e.id]: { ...existing, alive: false, exitCode: e.exitCode } };
       });
+    });
+    return () => {
+      void p.then((fn) => fn());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Fechar a janela pelo X/Alt+F4 é um encerramento normal, não uma queda —
+   * mas sem isto ele ficaria indistinguível de uma queda para o histórico
+   * (nenhum `pty_close` roda por aba antes do processo morrer). Marca tudo
+   * que ainda está aberto como encerrado e espera o save terminar antes de
+   * deixar a janela fechar de verdade, senão a escrita corre contra o
+   * encerramento do processo e pode nem chegar ao disco.
+   */
+  useEffect(() => {
+    const p = onWindowCloseFlush(async () => {
+      let mudou = false;
+      const agora = Date.now();
+      historyRef.current = historyRef.current.map((e) => {
+        if (e.endedAt !== null) return e;
+        mudou = true;
+        return { ...e, endedAt: agora };
+      });
+      if (mudou) {
+        await configSave({ sessionHistory: pruneHistory(historyRef.current) }).catch(() => {});
+      }
     });
     return () => {
       void p.then((fn) => fn());
@@ -217,18 +307,44 @@ export default function App() {
   }, []);
 
   const spawnFor = useCallback(
-    async (profile: ShellProfile | undefined, cwd: string | undefined, title?: string) => {
+    async (
+      profile: ShellProfile | undefined,
+      cwd: string | undefined,
+      title?: string,
+      initialCommand?: string,
+    ) => {
       const info = await ptySpawn({
         program: profile?.program,
         args: profile?.args,
         cwd,
         title: title ?? profile?.name,
         profileId: profile?.id,
+        initialCommand: initialCommand || undefined,
       });
       setSessions((prev) => ({ ...prev, [info.id]: info }));
+
+      const ws = workspacesRef.current.find((w) => w.id === activeWorkspaceIdRef.current) ?? null;
+      historyRef.current = [
+        ...historyRef.current,
+        {
+          id: info.id,
+          workspaceId: ws?.id ?? null,
+          workspaceName: ws?.name ?? null,
+          cwd: info.cwd,
+          program: info.program,
+          args: info.args,
+          profileId: info.profileId,
+          title: info.title,
+          autoCommand: initialCommand || null,
+          startedAt: Date.now(),
+          endedAt: null,
+        },
+      ];
+      persistHistory();
+
       return info;
     },
-    [],
+    [persistHistory],
   );
 
   /** Retorna o cwd correto: workspace ativo > home. */
@@ -241,7 +357,8 @@ export default function App() {
     async (profile: ShellProfile) => {
       try {
         const cwd = getActiveCwd();
-        const info = await spawnFor(profile, cwd);
+        const ws = workspaces.find((w) => w.id === activeWorkspaceId);
+        const info = await spawnFor(profile, cwd, undefined, ws?.autoCommand ?? undefined);
         const tab = newTabFromSession(info, activeWorkspaceId);
         aplicaTabs((prev) => [...prev, tab]);
         setActiveTabId(tab.id);
@@ -250,7 +367,37 @@ export default function App() {
         setError(String(e));
       }
     },
-    [spawnFor, getActiveCwd, aplicaTabs, activeWorkspaceId],
+    [spawnFor, getActiveCwd, aplicaTabs, activeWorkspaceId, workspaces],
+  );
+
+  /** Descarta uma entrada de recuperação, marcando-a como encerrada no histórico. */
+  const dismissRecovery = useCallback(
+    (id: string) => {
+      setRecovery((prev) => prev.filter((e) => e.id !== id));
+      markHistoryEnded(id);
+    },
+    [markHistoryEnded],
+  );
+
+  /** Reabre um terminal a partir de uma entrada de recuperação (mesma pasta/comando de antes). */
+  const reopenRecovery = useCallback(
+    async (entry: HistoryEntry) => {
+      try {
+        const profile =
+          profilesRef.current.find((p) => p.id === entry.profileId) ??
+          profilesRef.current.find((p) => p.recommended) ??
+          profilesRef.current[0];
+        const info = await spawnFor(profile, entry.cwd, entry.title, entry.autoCommand ?? undefined);
+        const tab = newTabFromSession(info, entry.workspaceId);
+        aplicaTabs((prev) => [...prev, tab]);
+        setActiveTabId(tab.id);
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        dismissRecovery(entry.id);
+      }
+    },
+    [spawnFor, aplicaTabs, dismissRecovery],
   );
 
   /**
@@ -282,13 +429,14 @@ export default function App() {
    */
   const closeSession = useCallback((sessionId: string) => {
     void ptyClose(sessionId).catch(() => {});
+    markHistoryEnded(sessionId);
     setSessions((prev) => {
       if (!(sessionId in prev)) return prev;
       const next = { ...prev };
       delete next[sessionId];
       return next;
     });
-  }, []);
+  }, [markHistoryEnded]);
 
   /**
    * Escolhe qual aba fica ativa depois que `tabId` sai da lista. Separado
@@ -370,6 +518,9 @@ export default function App() {
       if (!tabsRef.current.some((t) => t.id === tabId)) return;
       try {
         const cwd = getActiveCwd();
+        // Sem `autoCommand` de propósito: um split existe pra rodar outra
+        // coisa AO LADO do agente já em execução no painel original, não
+        // pra abrir um segundo `claude` disputando o mesmo terminal visual.
         const info = await spawnFor(perfilPadrao(), cwd);
 
         // A árvore só é lida DEPOIS do await. Capturá-la antes e aplicar o
@@ -417,10 +568,15 @@ export default function App() {
 
       try {
         const profile = profilesRef.current.find((p) => p.id === dead.profileId);
+        // Ao contrário do split, reiniciar É o mesmo terminal renascendo —
+        // faz sentido reaplicar o auto-início do workspace, não só na
+        // primeira abertura.
+        const ws = workspacesRef.current.find((w) => w.id === tab.workspaceId);
         const info = await spawnFor(
           profile ?? { id: "", name: dead.title, program: dead.program, args: dead.args, icon: "", recommended: false },
           dead.cwd,
           dead.title,
+          ws?.autoCommand ?? undefined,
         );
         closeSession(dead.id);
 
@@ -894,6 +1050,57 @@ export default function App() {
 
         <main className="stage">
           {error && <div className="error">{error}</div>}
+          {recovery.length > 0 && (
+            <div className="recovery-banner">
+              <div className="recovery-header">
+                <span>
+                  {recovery.length === 1
+                    ? "1 terminal não foi fechado corretamente da última vez."
+                    : `${recovery.length} terminais não foram fechados corretamente da última vez.`}
+                </span>
+                <div className="recovery-header-actions">
+                  <button
+                    className="chip"
+                    onClick={() => {
+                      const todas = recovery;
+                      setRecovery([]);
+                      for (const e of todas) void reopenRecovery(e);
+                    }}
+                  >
+                    Reabrir todos
+                  </button>
+                  <button
+                    className="chip subtle"
+                    onClick={() => {
+                      for (const e of recovery) markHistoryEnded(e.id);
+                      setRecovery([]);
+                    }}
+                  >
+                    Descartar
+                  </button>
+                </div>
+              </div>
+              <ul className="recovery-list">
+                {recovery.map((e) => (
+                  <li key={e.id} className="recovery-item">
+                    <span className="recovery-item-title" title={e.cwd}>
+                      {e.workspaceName ? `${e.workspaceName} · ` : ""}
+                      {shortenRecoveryPath(e.cwd)}
+                      {e.autoCommand ? ` (${e.autoCommand})` : ""}
+                    </span>
+                    <div className="recovery-item-actions">
+                      <button className="chip" onClick={() => void reopenRecovery(e)}>
+                        Reabrir
+                      </button>
+                      <button className="chip subtle" onClick={() => dismissRecovery(e.id)}>
+                        ×
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {tabs.length === 0 && !error && (
             <div className="empty">
               <h1>JARVIS</h1>
@@ -1096,4 +1303,12 @@ function TabBar({
       ))}
     </nav>
   );
+}
+
+function shortenRecoveryPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const home = normalized.match(/^[A-Za-z]:\/Users\/[^/]+/)?.[0];
+  const base = home && normalized.startsWith(home) ? "~" + normalized.slice(home.length) : normalized;
+  const parts = base.split("/").filter(Boolean);
+  return parts.length > 3 ? ".../" + parts.slice(-2).join("/") : base;
 }
