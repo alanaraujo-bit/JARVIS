@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod claude_accounts;
 pub mod claude_usage;
 pub mod commands;
 pub mod config;
@@ -8,6 +9,7 @@ pub mod protocol;
 pub mod pty;
 pub mod shells;
 pub mod sink;
+pub mod transcript;
 
 use std::sync::Arc;
 
@@ -30,7 +32,8 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            let manager = PtyManager::new(Arc::new(TauriSink::new(app.handle().clone())));
+            let manager = PtyManager::new(Arc::new(TauriSink::new(app.handle().clone())))
+                .with_transcript(crate::transcript::TranscriptStore::new());
             manager.start_dispatcher();
             app.manage(manager);
 
@@ -54,6 +57,10 @@ pub fn run() {
             commands::pty_close,
             commands::pty_snapshot,
             commands::pty_list,
+            commands::transcript_list,
+            commands::transcript_read,
+            commands::transcript_delete,
+            commands::transcript_clear,
             commands::shells_detect,
             commands::app_home_dir,
             commands::config_load,
@@ -63,8 +70,15 @@ pub fn run() {
             commands::ai_cancel,
             commands::ai_models,
             commands::claude_usage_summary,
+            commands::claude_usage_by_account,
             commands::claude_settings_get,
             commands::claude_settings_set,
+            commands::claude_account_prepare,
+            commands::claude_accounts_status,
+            commands::claude_account_import,
+            commands::claude_account_logout,
+            commands::claude_account_forget,
+            commands::claude_default_login_exists,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::Destroyed = event {

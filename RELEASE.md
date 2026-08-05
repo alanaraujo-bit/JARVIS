@@ -85,8 +85,26 @@ A chave pública correspondente está em `src-tauri/tauri.conf.json`, no campo
   instalador da última release e reaponta o botão de download. Não há nome de
   arquivo fixo em lugar nenhum — publicar a release já atualiza o site. O
   deploy do site em si é o do Vercel, no push para `master`.
-- **Os apps instalados.** Checam o endpoint alguns segundos depois de abrir e
-  mostram o aviso quando encontram versão maior.
+- **Os apps instalados.** Checam o endpoint três segundos depois de abrir, a
+  cada seis horas enquanto ficam abertos, e sempre que a janela volta ao foco
+  (respeitando o mesmo intervalo de seis horas). Quando encontram versão
+  maior, mostram o aviso flutuante e acendem o indicador na topbar.
+
+## O que a pessoa vê
+
+- **Aviso flutuante** com "Atualizar", "Detalhes" e "Agora não". O "Agora
+  não" silencia **aquela** versão — a próxima volta a avisar. Fica gravado em
+  `localStorage`, na chave `jarvis.update.dispensada`.
+- **Painel de atualizações**, na paleta de comandos (Ctrl+Shift+P →
+  "Procurar atualizações"). Mostra a versão instalada, procura sob demanda,
+  lista as notas da release e diz o que houve quando falha. É o único lugar
+  que responde "você está na versão mais recente" — a checagem de fundo não
+  interrompe ninguém para dizer isso.
+- **Indicador na topbar**, só enquanto há uma atualização pendente.
+
+As notas que você escrever no `latest.json` (passo 4) são o que aparece na
+lista de novidades do painel — vale escrever em frases, uma por linha, com
+`-` na frente.
 
 ## Cuidado conhecido
 

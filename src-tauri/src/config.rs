@@ -123,10 +123,37 @@ pub struct WorkspaceConfig {
     /// (ex.: "claude"). `None`/vazio desliga o auto-início.
     #[serde(default)]
     pub auto_command: Option<String>,
+    /// Conta do Claude Code usada nos terminais deste projeto. `None` = a
+    /// conta padrão do app. Um id que não existe mais na lista de contas é
+    /// tratado como `None` pelo front, e não como erro: apagar uma conta não
+    /// pode inutilizar os workspaces que a usavam.
+    #[serde(default)]
+    pub claude_account_id: Option<String>,
     /// Epoch em milissegundos. `u64` e não `i64`: o front sempre manda
     /// `Date.now()`, que nunca é negativo.
     #[serde(default)]
     pub created_at: u64,
+}
+
+/// Uma conta do Claude Code registrada no JARVIS.
+///
+/// O que mora aqui é só o rótulo: o estado real (logada? qual plano?) vem do
+/// disco, em `claude_accounts::status`. Guardar "logada" no config seria
+/// guardar uma cópia que envelhece — a pessoa pode deslogar pela própria CLI,
+/// fora do app, e o config nunca ficaria sabendo.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeAccountConfig {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "default_account_color")]
+    pub color: String,
+    #[serde(default)]
+    pub created_at: u64,
+}
+
+fn default_account_color() -> String {
+    "#a78bfa".to_string()
 }
 
 fn default_color() -> String {
@@ -221,6 +248,31 @@ pub struct AppConfig {
     /// aba (crash, Alt+F4, encerrar pelo gerenciador de tarefas).
     #[serde(default)]
     pub session_history: Option<serde_json::Value>,
+    /// Contas do Claude Code cadastradas. Mesma tolerância dos workspaces:
+    /// uma entrada corrompida some sozinha em vez de derrubar o config.
+    #[serde(default, deserialize_with = "contas_tolerantes")]
+    pub claude_accounts: Vec<ClaudeAccountConfig>,
+    /// Conta usada por terminais que não herdam nada de um workspace.
+    #[serde(default)]
+    pub default_claude_account_id: Option<String>,
+}
+
+/// Mesma lógica de `workspaces_tolerantes`, para a lista de contas.
+fn contas_tolerantes<'de, D>(d: D) -> std::result::Result<Vec<ClaudeAccountConfig>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let bruto = Vec::<serde_json::Value>::deserialize(d)?;
+    Ok(bruto
+        .into_iter()
+        .filter_map(|v| match serde_json::from_value::<ClaudeAccountConfig>(v) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("[jarvis] conta do Claude inválida no config, ignorada ({e})");
+                None
+            }
+        })
+        .collect())
 }
 
 /// Fatia parcial do config. Cada tela manda só o que ela é dona; um `None`
@@ -245,6 +297,12 @@ pub struct ConfigPatch {
     pub layout: Option<serde_json::Value>,
     #[serde(default)]
     pub session_history: Option<serde_json::Value>,
+    #[serde(default)]
+    pub claude_accounts: Option<Vec<ClaudeAccountConfig>>,
+    /// Duplamente opcional, como `active_workspace_id`: `Some(None)` é o
+    /// pedido explícito de "voltar a não ter conta padrão".
+    #[serde(default, deserialize_with = "double_option")]
+    pub default_claude_account_id: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -283,6 +341,12 @@ impl AppConfig {
         }
         if let Some(h) = patch.session_history {
             self.session_history = Some(h);
+        }
+        if let Some(c) = patch.claude_accounts {
+            self.claude_accounts = c;
+        }
+        if let Some(d) = patch.default_claude_account_id {
+            self.default_claude_account_id = d;
         }
         if let Some(ui) = patch.ui {
             if let Some(v) = ui.sidebar_open {
@@ -461,6 +525,7 @@ mod tests {
                 color: "#fff".into(),
                 default_profile_id: None,
                 auto_command: None,
+                claude_account_id: None,
                 created_at: 1,
             }]),
             ..Default::default()

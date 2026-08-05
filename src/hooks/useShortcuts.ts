@@ -3,6 +3,8 @@ import { useEffect, useRef } from "react";
 export interface ShortcutActions {
   newTab: () => void;
   closePane: () => void;
+  minimizeTab: () => void;
+  restoreLastMinimized: () => void;
   nextTab: () => void;
   prevTab: () => void;
   gotoTab: (index: number) => void;
@@ -14,9 +16,10 @@ export interface ShortcutActions {
   toggleWorkspaceSidebar: () => void;
   toggleAiPanel: () => void;
   clearAiChat: () => void;
-  // Paleta + estatísticas
+  // Paleta + estatísticas + histórico
   togglePalette: () => void;
   toggleStats: () => void;
+  toggleHistory: () => void;
 }
 
 /**
@@ -58,6 +61,18 @@ export function useShortcuts(actions: ShortcutActions) {
       if (ctrl && e.shiftKey && !e.altKey && e.key.toLowerCase() === "w") {
         consume(e);
         actions.closePane();
+        return;
+      }
+      // Minimizar e restaurar são o mesmo gesto em dois sentidos, então
+      // dividem a tecla: com Alt, a última minimizada volta.
+      if (ctrl && e.shiftKey && !e.altKey && e.key.toLowerCase() === "m") {
+        consume(e);
+        actions.minimizeTab();
+        return;
+      }
+      if (ctrl && e.shiftKey && e.altKey && e.key.toLowerCase() === "m") {
+        consume(e);
+        actions.restoreLastMinimized();
         return;
       }
       if (ctrl && !e.shiftKey && !e.altKey && e.key === "Tab") {
@@ -120,6 +135,11 @@ export function useShortcuts(actions: ShortcutActions) {
       if (ctrl && e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
         consume(e);
         actions.toggleStats();
+        return;
+      }
+      if (ctrl && e.shiftKey && !e.altKey && e.key.toLowerCase() === "h") {
+        consume(e);
+        actions.toggleHistory();
         return;
       }
     };

@@ -5,17 +5,29 @@ import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
 import { AiPanel } from "./components/AiPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { StatsPanel } from "./components/StatsPanel";
+import { HistoryPanel } from "./components/HistoryPanel";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { UpdatePanel } from "./components/UpdatePanel";
+import { AccountsPanel } from "./components/AccountsPanel";
 import type { Command as PaletteCommand } from "./lib/palette";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { useAiStore } from "./stores/aiStore";
 import { useUiStore } from "./stores/uiStore";
+import { useUpdateStore } from "./stores/updateStore";
+import { useAccountStore } from "./stores/accountStore";
 import { Icon, shellIcon } from "./components/Icon";
 import { buildAiContext, buildSystemPrompt, captureTerminalLines } from "./lib/aiContext";
 import { getTerminal } from "./lib/terminalRegistry";
 import { parseLayout, restoreLayout } from "./lib/restoreLayout";
 import { findOrphans, parseHistory, pruneHistory, type HistoryEntry } from "./lib/sessionHistory";
+import { resolveConta } from "./lib/claudeAccounts";
+import {
+  minimizedTabs as filtraMinimizadas,
+  moveTab as reordena,
+  nextActiveAfterHiding,
+  visibleTabs as filtraVisiveis,
+} from "./lib/tabVisibility";
 import {
   appHomeDir,
   configLoad,
@@ -30,6 +42,7 @@ import {
   shellsDetect,
   type SessionInfo,
   type ShellProfile,
+  type TranscriptMeta,
 } from "./lib/ipc";
 import {
   closePane as closePaneInTree,
@@ -55,6 +68,18 @@ interface TabState {
    * no meio de uma dúzia de outras.
    */
   workspaceId: string | null;
+  /**
+   * Minimizada: fora da barra de abas, na bandeja, com tudo vivo por trás —
+   * sessão rodando, painel montado, saída chegando. É o meio-termo que
+   * faltava entre "ativa" e "fechada" (que mata o processo).
+   */
+  minimized?: boolean;
+  /**
+   * Quando foi minimizada. Serve só para "restaurar a última": a ordem da
+   * lista é a de criação, e a aba minimizada há dez minutos apareceria
+   * depois da que acabou de sair da barra.
+   */
+  minimizedAt?: number;
 }
 
 const TEMA_ROTULO: Record<string, string> = {
@@ -70,7 +95,14 @@ const DENSIDADE_ROTULO: Record<string, string> = {
 
 function newTabFromSession(info: SessionInfo, workspaceId: string | null = null): TabState {
   const node = leaf(info.id);
-  return { id: nextId("tab"), title: info.title, root: node, activePaneId: node.id, workspaceId };
+  return {
+    id: nextId("tab"),
+    title: info.title,
+    root: node,
+    activePaneId: node.id,
+    workspaceId,
+    minimized: false,
+  };
 }
 
 export default function App() {
@@ -82,6 +114,13 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  /**
+   * Conta do Claude Code de cada sessão viva, para pintar o ponto da aba e
+   * saber em que login um terminal está sem ter que perguntar a ele.
+   * Indexado por sessão, não por aba: um split pode nascer noutra conta.
+   */
+  const [sessionAccounts, setSessionAccounts] = useState<Record<string, string>>({});
   const reconciledRef = useRef(false);
 
   // Seletores estreitos, e não o objeto inteiro do store. Assinar o store
@@ -105,6 +144,20 @@ export default function App() {
   const startSystemWatch = useUiStore((s) => s.startSystemWatch);
   const density = useUiStore((s) => s.density);
   const setDensity = useUiStore((s) => s.setDensity);
+
+  const contas = useAccountStore((s) => s.contas);
+  const contaEscolhidaId = useAccountStore((s) => s.escolhidaId);
+  const contaPadraoId = useAccountStore((s) => s.padraoId);
+  const contasPainelAberto = useAccountStore((s) => s.painelAberto);
+  const carregarContas = useAccountStore((s) => s.carregar);
+  const escolherConta = useAccountStore((s) => s.escolher);
+  const abrirPainelContas = useAccountStore((s) => s.abrirPainel);
+  const fecharPainelContas = useAccountStore((s) => s.fecharPainel);
+
+  const updateFase = useUpdateStore((s) => s.fase);
+  const updatePainelAberto = useUpdateStore((s) => s.painelAberto);
+  const abrirPainelUpdate = useUpdateStore((s) => s.abrirPainel);
+  const fecharPainelUpdate = useUpdateStore((s) => s.fecharPainel);
 
   const aiPanelOpen = useAiStore((s) => s.panelOpen);
   const loadAiConfig = useAiStore((s) => s.loadConfig);
@@ -192,13 +245,25 @@ export default function App() {
     return parar;
   }, [hydrateUi, startSystemWatch]);
 
+  /**
+   * Atualizações: lê a versão instalada e liga a checagem periódica. A
+   * primeira consulta sai com alguns segundos de atraso, fora do caminho
+   * crítico da abertura (ver `updateStore`).
+   */
+  useEffect(() => {
+    const store = useUpdateStore.getState();
+    void store.init();
+    return store.iniciarChecagemAutomatica();
+  }, []);
+
   useEffect(() => {
     void shellsDetect().then(setProfiles).catch((e) => setError(String(e)));
     void appHomeDir().then(setHome).catch(() => {});
 
-    // Carrega configuração salva (workspaces + IA)
+    // Carrega configuração salva (workspaces + IA + contas do Claude Code)
     void loadWorkspaces();
     void loadAiConfig();
+    void carregarContas();
 
     if (reconciledRef.current) return;
     reconciledRef.current = true;
@@ -347,18 +412,42 @@ export default function App() {
       cwd: string | undefined,
       title?: string,
       initialCommand?: string,
+      /**
+       * Conta do Claude Code a forçar, ignorando a precedência normal. Só o
+       * fluxo de "Entrar numa conta" usa isto — todo o resto quer justamente
+       * a resolução automática.
+       */
+      contaForcada?: string | null,
     ) => {
+      const ws = workspacesRef.current.find((w) => w.id === activeWorkspaceIdRef.current) ?? null;
+
+      // A conta vira uma variável de ambiente e nada mais: a CLI `claude` lê
+      // `CLAUDE_CONFIG_DIR` e passa a viver na pasta daquela conta. Sem conta
+      // cadastrada o `env` sai vazio e o terminal usa o `~/.claude` de
+      // sempre — quem não cadastrou nada não percebe que isto existe.
+      const { conta, env } = await useAccountStore
+        .getState()
+        .envParaTerminal(ws?.claudeAccountId ?? null, contaForcada);
+
       const info = await ptySpawn({
         program: profile?.program,
         args: profile?.args,
         cwd,
+        env,
         title: title ?? profile?.name,
         profileId: profile?.id,
         initialCommand: initialCommand || undefined,
+        // Vai junto só para o histórico gravado saber a que projeto esta
+        // sessão pertencia quando alguém for relê-la semanas depois.
+        workspaceId: ws?.id ?? null,
+        workspaceName: ws?.name ?? null,
       });
       setSessions((prev) => ({ ...prev, [info.id]: info }));
+      // Guardado por SESSÃO, e não por aba: um split herda a conta do
+      // terminal que o gerou, e uma aba com dois painéis pode legitimamente
+      // ter duas contas diferentes.
+      if (conta) setSessionAccounts((prev) => ({ ...prev, [info.id]: conta.id }));
 
-      const ws = workspacesRef.current.find((w) => w.id === activeWorkspaceIdRef.current) ?? null;
       historyRef.current = [
         ...historyRef.current,
         {
@@ -405,6 +494,41 @@ export default function App() {
     [spawnFor, getActiveCwd, aplicaTabs, activeWorkspaceId, workspaces],
   );
 
+  /**
+   * Abre um terminal já apontado para a conta e com o `claude` rodando, que é
+   * onde o `/login` acontece.
+   *
+   * O login do Claude Code é um fluxo interativo dentro da própria CLI — não
+   * há como o JARVIS fazê-lo por fora. O que ele pode fazer é entregar o
+   * terminal certo, na pasta certa, com o comando já digitado: a pessoa só
+   * roda `/login` e volta.
+   */
+  const entrarNaConta = useCallback(
+    async (conta: { id: string; name: string }) => {
+      try {
+        // Shell recomendado da máquina, e não o preferido do workspace: este
+        // terminal existe para fazer login, não para trabalhar num projeto.
+        const perfil =
+          profilesRef.current.find((p) => p.recommended) ?? profilesRef.current[0];
+        const info = await spawnFor(
+          perfil,
+          homeRef.current || undefined,
+          `Login · ${conta.name}`,
+          "claude",
+          conta.id,
+        );
+        const tab = newTabFromSession(info, null);
+        aplicaTabs((prev) => [...prev, tab]);
+        setActiveTabId(tab.id);
+        fecharPainelContas();
+        setError(null);
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [spawnFor, aplicaTabs, fecharPainelContas],
+  );
+
   /** Descarta uma entrada de recuperação, marcando-a como encerrada no histórico. */
   const dismissRecovery = useCallback(
     (id: string) => {
@@ -433,6 +557,37 @@ export default function App() {
       }
     },
     [spawnFor, aplicaTabs, dismissRecovery],
+  );
+
+  /**
+   * Abre um terminal novo a partir de uma sessão gravada: mesma pasta, mesmo
+   * shell, mesmo comando de auto-início.
+   *
+   * O que não volta é o processo — aquele morreu junto com a sessão original,
+   * e nada aqui pode ressuscitá-lo. O que volta é o ponto de partida: uma CLI
+   * que guarda o próprio estado (o `claude`, por exemplo) reencontra a
+   * conversa dela ao subir na mesma pasta, e o texto do que aconteceu antes
+   * continua legível no painel de histórico ao lado.
+   */
+  const reopenFromHistory = useCallback(
+    async (m: TranscriptMeta) => {
+      try {
+        const profile =
+          profilesRef.current.find((p) => p.id === m.profileId) ??
+          profilesRef.current.find((p) => p.program === m.program) ??
+          profilesRef.current.find((p) => p.recommended) ??
+          profilesRef.current[0];
+        const info = await spawnFor(profile, m.cwd, m.title, m.autoCommand ?? undefined);
+        const tab = newTabFromSession(info, m.workspaceId);
+        aplicaTabs((prev) => [...prev, tab]);
+        setActiveTabId(tab.id);
+        setHistoryOpen(false);
+        setError(null);
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [spawnFor, aplicaTabs],
   );
 
   /**
@@ -474,16 +629,14 @@ export default function App() {
   }, [markHistoryEnded]);
 
   /**
-   * Escolhe qual aba fica ativa depois que `tabId` sai da lista. Separado
-   * para os dois caminhos de remoção (fechar a aba, fechar o último painel
-   * dela) não divergirem.
+   * Escolhe qual aba fica ativa depois que `tabId` sai da barra. Separado
+   * para os três caminhos (fechar a aba, fechar o último painel dela,
+   * minimizar) não divergirem — e por índice de *aba visível*, não da lista
+   * crua: com minimizadas no meio, o vizinho da lista pode não ser o vizinho
+   * que o usuário vê.
    */
-  const ativaVizinha = useCallback((antes: TabState[], depois: TabState[], tabId: string) => {
-    setActiveTabId((cur) => {
-      if (cur !== tabId) return cur;
-      const idx = antes.findIndex((t) => t.id === tabId);
-      return depois[Math.min(idx, depois.length - 1)]?.id ?? null;
-    });
+  const ativaVizinha = useCallback((antes: TabState[], tabId: string) => {
+    setActiveTabId((cur) => nextActiveAfterHiding(antes, tabId, cur));
   }, []);
 
   const closeTab = useCallback(
@@ -496,8 +649,8 @@ export default function App() {
       // disparava dois `pty_close` por aba na invocação dupla do StrictMode.
       for (const l of listLeaves(tab.root)) closeSession(l.sessionId);
 
-      const depois = aplicaTabs((prev) => prev.filter((t) => t.id !== tabId));
-      ativaVizinha(antes, depois, tabId);
+      aplicaTabs((prev) => prev.filter((t) => t.id !== tabId));
+      ativaVizinha(antes, tabId);
     },
     [aplicaTabs, ativaVizinha, closeSession],
   );
@@ -515,8 +668,8 @@ export default function App() {
       const nextRoot = closePaneInTree(tab.root, paneId);
       if (nextRoot === null) {
         // Era o último painel: a aba inteira vai junto.
-        const depois = aplicaTabs((prev) => prev.filter((t) => t.id !== tabId));
-        ativaVizinha(antes, depois, tabId);
+        aplicaTabs((prev) => prev.filter((t) => t.id !== tabId));
+        ativaVizinha(antes, tabId);
         return;
       }
 
@@ -527,6 +680,48 @@ export default function App() {
       );
     },
     [aplicaTabs, ativaVizinha, closeSession],
+  );
+
+  /**
+   * Tira a aba da barra sem tocar na sessão.
+   *
+   * Nada é desmontado: o `<div className="pane">` da aba continua no DOM,
+   * apenas `hidden`, exatamente como já acontece com qualquer aba de fundo.
+   * Isso não é economia de código, é o requisito — desmontar destruiria o
+   * xterm e o `npm run dev` minimizado perderia todo o scrollback dele.
+   */
+  const minimizeTab = useCallback(
+    (tabId: string) => {
+      const antes = tabsRef.current;
+      if (!antes.some((t) => t.id === tabId && !t.minimized)) return;
+
+      aplicaTabs((prev) =>
+        prev.map((t) => (t.id === tabId ? { ...t, minimized: true, minimizedAt: Date.now() } : t)),
+      );
+      setActiveTabId((cur) => nextActiveAfterHiding(antes, tabId, cur));
+    },
+    [aplicaTabs],
+  );
+
+  const restoreTab = useCallback(
+    (tabId: string) => {
+      aplicaTabs((prev) =>
+        prev.map((t) =>
+          t.id === tabId ? { ...t, minimized: false, minimizedAt: undefined } : t,
+        ),
+      );
+      // Restaurar sem focar deixaria a aba reaparecer na barra e o usuário
+      // ainda ter que clicar nela — dois passos para um pedido só.
+      setActiveTabId(tabId);
+    },
+    [aplicaTabs],
+  );
+
+  const moveTab = useCallback(
+    (fromId: string, toId: string) => {
+      aplicaTabs((prev) => reordena(prev, fromId, toId));
+    },
+    [aplicaTabs],
   );
 
   const focusPane = useCallback(
@@ -684,20 +879,38 @@ export default function App() {
         const tab = tabsRef.current.find((t) => t.id === tabId);
         if (tab) closePane(tab.id, tab.activePaneId);
       },
+      minimizeTab: () => {
+        const tabId = activeTabIdRef.current;
+        if (tabId) minimizeTab(tabId);
+      },
+      restoreLastMinimized: () => {
+        // A última a ser minimizada é a primeira a voltar: quem pede isso
+        // acabou de esconder algo e mudou de ideia.
+        const ultima = filtraMinimizadas(tabsRef.current).reduce<TabState | null>(
+          (maisNova, t) =>
+            !maisNova || (t.minimizedAt ?? 0) >= (maisNova.minimizedAt ?? 0) ? t : maisNova,
+          null,
+        );
+        if (ultima) restoreTab(ultima.id);
+      },
+      // Sempre sobre as abas VISÍVEIS: parar numa minimizada deixaria a tela
+      // em branco, porque o painel dela existe mas não é o ativo — e o
+      // Ctrl+1..9 tem que casar com o que está desenhado na barra, não com
+      // uma posição na lista interna que ninguém enxerga.
       nextTab: () => {
-        const list = tabsRef.current;
+        const list = filtraVisiveis(tabsRef.current);
         if (list.length < 2) return;
         const idx = list.findIndex((t) => t.id === activeTabIdRef.current);
         setActiveTabId(list[(idx + 1) % list.length].id);
       },
       prevTab: () => {
-        const list = tabsRef.current;
+        const list = filtraVisiveis(tabsRef.current);
         if (list.length < 2) return;
         const idx = list.findIndex((t) => t.id === activeTabIdRef.current);
         setActiveTabId(list[(idx - 1 + list.length) % list.length].id);
       },
       gotoTab: (index: number) => {
-        const list = tabsRef.current;
+        const list = filtraVisiveis(tabsRef.current);
         if (index >= 0 && index < list.length) setActiveTabId(list[index].id);
       },
       splitRight: () => void splitActivePane("row"),
@@ -726,16 +939,25 @@ export default function App() {
       // tela e empilhadas o backdrop de uma comeria os cliques da outra.
       togglePalette: () => {
         setStatsOpen(false);
+        setHistoryOpen(false);
         setPaletteOpen((v) => !v);
       },
       toggleStats: () => {
         setPaletteOpen(false);
+        setHistoryOpen(false);
         setStatsOpen((v) => !v);
+      },
+      toggleHistory: () => {
+        setPaletteOpen(false);
+        setStatsOpen(false);
+        setHistoryOpen((v) => !v);
       },
     }),
     [
       openDefaultTab,
       closePane,
+      minimizeTab,
+      restoreTab,
       splitActivePane,
       focusPane,
       openFolderAndAdd,
@@ -751,17 +973,29 @@ export default function App() {
   // todo atalho exige Ctrl — e um Esc solto precisa chegar ao terminal
   // quando não há nada aberto por cima (é tecla de uso constante em TUIs).
   useEffect(() => {
-    if (!paletteOpen && !statsOpen) return;
+    if (!paletteOpen && !statsOpen && !historyOpen && !updatePainelAberto && !contasPainelAberto)
+      return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
       e.stopPropagation();
       setPaletteOpen(false);
       setStatsOpen(false);
+      setHistoryOpen(false);
+      fecharPainelUpdate();
+      fecharPainelContas();
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [paletteOpen, statsOpen]);
+  }, [
+    paletteOpen,
+    statsOpen,
+    historyOpen,
+    updatePainelAberto,
+    contasPainelAberto,
+    fecharPainelUpdate,
+    fecharPainelContas,
+  ]);
 
   /**
    * Guarda o arranjo de abas e divisões para uma recarga poder reconstruí-lo.
@@ -850,6 +1084,14 @@ export default function App() {
         run: shortcutActions.closePane,
       },
       {
+        id: "tab.minimize",
+        title: "Minimizar a aba atual",
+        group: "Abas",
+        shortcut: "Ctrl+Shift+M",
+        keywords: "esconder ocultar bandeja sem fechar continua rodando",
+        run: shortcutActions.minimizeTab,
+      },
+      {
         id: "ws.open",
         title: "Abrir pasta de projeto",
         group: "Workspaces",
@@ -887,6 +1129,43 @@ export default function App() {
         shortcut: "Ctrl+Shift+L",
         keywords: "chat apagar",
         run: clearAiMessages,
+      },
+      {
+        id: "app.accounts",
+        title: "Contas do Claude Code",
+        group: "Aplicativo",
+        keywords: "conta login trocar alternar claude account plano pro",
+        run: () => {
+          setPaletteOpen(false);
+          setStatsOpen(false);
+          setHistoryOpen(false);
+          abrirPainelContas();
+        },
+      },
+      {
+        id: "app.update",
+        title: "Procurar atualizações",
+        group: "Aplicativo",
+        keywords: "update versao nova atualizar sobre",
+        run: () => {
+          // Mesma regra das outras sobreposições: só uma por vez, senão o
+          // backdrop de uma come os cliques da outra.
+          setPaletteOpen(false);
+          setStatsOpen(false);
+          abrirPainelUpdate();
+        },
+      },
+      {
+        id: "app.history",
+        title: "Histórico de terminais",
+        group: "Aplicativo",
+        shortcut: "Ctrl+Shift+H",
+        keywords: "sessoes gravadas conversas claude agente recuperar contexto log",
+        run: () => {
+          setPaletteOpen(false);
+          setStatsOpen(false);
+          setHistoryOpen(true);
+        },
       },
       {
         id: "app.stats",
@@ -962,6 +1241,45 @@ export default function App() {
       }
     }
 
+    // Contas do Claude Code: uma entrada por conta para os próximos
+    // terminais, e — com um projeto ativo — uma para fixar a conta dele.
+    for (const c of contas) {
+      if (c.id !== contaEscolhidaId) {
+        lista.push({
+          id: `acc.use.${c.id}`,
+          title: `Usar a conta ${c.name} nos próximos terminais`,
+          group: "Contas",
+          keywords: "claude conta login trocar alternar",
+          run: () => escolherConta(c.id),
+        });
+      }
+
+      if (activeWorkspaceId) {
+        const wsAtivo = workspaces.find((w) => w.id === activeWorkspaceId);
+        if (wsAtivo && wsAtivo.claudeAccountId !== c.id) {
+          lista.push({
+            id: `acc.ws.${c.id}`,
+            title: `Fixar a conta ${c.name} no projeto “${wsAtivo.name}”`,
+            group: "Contas",
+            keywords: "claude conta workspace projeto padrao",
+            run: () => updateWorkspace(activeWorkspaceId, { claudeAccountId: c.id }),
+          });
+        }
+      }
+    }
+
+    // Só aparece quando há o que desfazer: sem uma escolha ativa, "voltar ao
+    // padrão" seria um comando que não faz nada.
+    if (contaEscolhidaId) {
+      lista.push({
+        id: "acc.clear",
+        title: "Voltar a seguir a conta do projeto",
+        group: "Contas",
+        keywords: "claude conta limpar padrao automatico",
+        run: () => escolherConta(null),
+      });
+    }
+
     // Um comando por workspace, para trocar de projeto sem tirar a mão do
     // teclado nem abrir a barra lateral.
     for (const ws of workspaces) {
@@ -974,10 +1292,24 @@ export default function App() {
       });
     }
 
+    // Um comando por aba minimizada. A bandeja já as mostra, mas quando são
+    // muitas o rótulo fica truncado; aqui dá pra achar pelo nome inteiro.
+    for (const t of filtraMinimizadas(tabs)) {
+      lista.push({
+        id: `tab.restore.${t.id}`,
+        title: `Restaurar: ${t.title}`,
+        group: "Abas",
+        keywords: "minimizada bandeja voltar mostrar",
+        run: () => restoreTab(t.id),
+      });
+    }
+
     return lista;
   }, [
     profiles,
     workspaces,
+    tabs,
+    restoreTab,
     openDefaultTab,
     openTab,
     splitActivePane,
@@ -989,6 +1321,11 @@ export default function App() {
     activeWorkspaceId,
     toggleAiPanel,
     clearAiMessages,
+    abrirPainelUpdate,
+    contas,
+    contaEscolhidaId,
+    escolherConta,
+    abrirPainelContas,
   ]);
 
   /* ------------------------------- render ------------------------------- */
@@ -1006,6 +1343,32 @@ export default function App() {
     () => Object.fromEntries(workspaces.map((w) => [w.id, w.color])),
     [workspaces],
   );
+
+  /**
+   * Conta que os próximos terminais vão usar, pela mesma precedência que o
+   * `spawnFor` aplica de verdade. A barra mostra o resultado em vez do
+   * ajuste: o que interessa a quem está olhando não é "qual conta eu
+   * selecionei", é "em que conta o próximo `claude` vai rodar".
+   */
+  const contaAtiva = useMemo(
+    () =>
+      resolveConta(contas, {
+        escolhidaNaHora: contaEscolhidaId,
+        doWorkspace: activeWs?.claudeAccountId ?? null,
+        padrao: contaPadraoId,
+      }),
+    [contas, contaEscolhidaId, activeWs, contaPadraoId],
+  );
+
+  const coresDeConta = useMemo(
+    () => Object.fromEntries(contas.map((c) => [c.id, c.color])),
+    [contas],
+  );
+
+  // As duas listas que a barra de abas desenha. Todas as abas continuam
+  // montadas mais abaixo — isto aqui separa só quem aparece onde.
+  const abasVisiveis = useMemo(() => filtraVisiveis(tabs), [tabs]);
+  const abasMinimizadas = useMemo(() => filtraMinimizadas(tabs), [tabs]);
 
   return (
     <div
@@ -1029,6 +1392,29 @@ export default function App() {
             <span className="ws-badge-dot" style={{ background: activeWs.color }} />
             {activeWs.name}
           </span>
+        )}
+        {/* Só aparece para quem cadastrou contas. Sem conta nenhuma, o
+            terminal usa o login normal do Claude Code e um distintivo aqui
+            não teria o que informar. */}
+        {contaAtiva && (
+          <button
+            className="ws-badge account-badge"
+            onClick={() => {
+              setPaletteOpen(false);
+              setStatsOpen(false);
+              setHistoryOpen(false);
+              abrirPainelContas();
+            }}
+            title={
+              contaEscolhidaId
+                ? `Próximos terminais na conta ${contaAtiva.name} (escolha manual)`
+                : `Próximos terminais na conta ${contaAtiva.name}`
+            }
+          >
+            <span className="ws-badge-dot" style={{ background: contaAtiva.color }} />
+            {contaAtiva.name}
+            {contaEscolhidaId && <span className="account-badge-pin">•</span>}
+          </button>
         )}
         <div className="launchers">
           {profiles.map((p) => (
@@ -1066,6 +1452,28 @@ export default function App() {
         )}
         <div className="topbar-right">
           <span className="topbar-sep" aria-hidden="true" />
+          {/* Só aparece quando há o que fazer. Um botão permanente de
+              "atualizações" ocuparia espaço da topbar 364 dias por ano para
+              dizer "está tudo em dia" — quem quiser conferir mesmo assim tem
+              o comando na paleta. */}
+          {(updateFase === "disponivel" || updateFase === "pronto") && (
+            <button
+              className="topbar-btn update-flag"
+              onClick={() => {
+                setPaletteOpen(false);
+                setStatsOpen(false);
+                abrirPainelUpdate();
+              }}
+              title={
+                updateFase === "pronto"
+                  ? "Atualização instalada — reinicie para aplicar"
+                  : "Uma versão nova está disponível"
+              }
+              aria-label="Atualização disponível"
+            >
+              <Icon name="refresh" />
+            </button>
+          )}
           <button
             className="topbar-btn"
             onClick={() => setDensity(density === "cozy" ? "compact" : "cozy")}
@@ -1092,6 +1500,18 @@ export default function App() {
           </button>
           <button
             className="topbar-btn"
+            onClick={() => {
+              setPaletteOpen(false);
+              setStatsOpen(false);
+              setHistoryOpen(true);
+            }}
+            title="Histórico de terminais (Ctrl+Shift+H)"
+            aria-label="Histórico de terminais"
+          >
+            <Icon name="history" />
+          </button>
+          <button
+            className="topbar-btn"
             onClick={() => setStatsOpen(true)}
             title="Estatísticas de uso (Ctrl+Shift+S)"
             aria-label="Estatísticas de uso"
@@ -1111,13 +1531,19 @@ export default function App() {
       </header>
 
       <TabBar
-        tabs={tabs}
+        tabs={abasVisiveis}
+        minimized={abasMinimizadas}
         activeTabId={activeTabId}
         sessions={sessions}
         coresDeWorkspace={coresDeWorkspace}
+        contaDaSessao={sessionAccounts}
+        coresDeConta={coresDeConta}
         onActivate={setActiveTabId}
         onClose={closeTab}
-        onReorder={aplicaTabs}
+        onMinimize={minimizeTab}
+        onRestore={restoreTab}
+        onMove={moveTab}
+        onRename={aplicaTabs}
       />
 
       <div className="body-row">
@@ -1181,10 +1607,22 @@ export default function App() {
               </ul>
             </div>
           )}
-          {tabs.length === 0 && !error && (
+          {abasVisiveis.length === 0 && !error && (
             <div className="empty">
               <h1>JARVIS</h1>
-              <p>Escolha um shell na barra de cima para abrir um terminal.</p>
+              {/* Com tudo minimizado a tela fica igualzinha à de "nenhum
+                  terminal aberto" — e aí a pessoa abre outro sem perceber
+                  que os antigos continuam rodando ali do lado. */}
+              {abasMinimizadas.length > 0 ? (
+                <p>
+                  {abasMinimizadas.length === 1
+                    ? "1 terminal está minimizado e continua rodando."
+                    : `${abasMinimizadas.length} terminais estão minimizados e continuam rodando.`}{" "}
+                  Clique na bandeja da barra de abas para trazer um de volta.
+                </p>
+              ) : (
+                <p>Escolha um shell na barra de cima para abrir um terminal.</p>
+              )}
               {workspaces.length === 0 && (
                 <button className="chip empty-action" onClick={() => void openFolderAndAdd()}>
                   <Icon name="folder-open" size={14} />
@@ -1236,6 +1674,13 @@ export default function App() {
         onClose={() => setPaletteOpen(false)}
       />
       <StatsPanel open={statsOpen} sessions={listaSessoes} onClose={() => setStatsOpen(false)} />
+      <HistoryPanel
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onReopen={(m) => void reopenFromHistory(m)}
+      />
+      <UpdatePanel />
+      <AccountsPanel onEntrar={(c) => void entrarNaConta(c)} />
     </div>
   );
 }
@@ -1243,14 +1688,26 @@ export default function App() {
 /* ------------------------------ barra de abas ----------------------------- */
 
 interface TabBarProps {
+  /** Só as abas visíveis — as minimizadas vêm em `minimized`. */
   tabs: TabState[];
+  minimized: TabState[];
   activeTabId: string | null;
   sessions: Readonly<Record<string, SessionInfo>>;
   /** Cor de cada workspace, para pintar o ponto da aba. */
   coresDeWorkspace: Readonly<Record<string, string>>;
+  /** Conta do Claude Code de cada sessão, e a cor de cada conta. */
+  contaDaSessao: Readonly<Record<string, string>>;
+  coresDeConta: Readonly<Record<string, string>>;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
-  onReorder: (updater: (prev: TabState[]) => TabState[]) => void;
+  onMinimize: (id: string) => void;
+  onRestore: (id: string) => void;
+  /**
+   * Reordenar é por id, não por índice: a barra mostra só as visíveis, então
+   * "o terceiro da tela" pode ser o quinto da lista real.
+   */
+  onMove: (fromId: string, toId: string) => void;
+  onRename: (updater: (prev: TabState[]) => TabState[]) => void;
 }
 
 /** "dead": todo painel morreu. "partial": pelo menos um morreu, mas não todos. */
@@ -1263,20 +1720,26 @@ function tabStatus(tab: TabState, sessions: Readonly<Record<string, SessionInfo>
 
 function TabBar({
   tabs,
+  minimized,
   activeTabId,
   sessions,
   coresDeWorkspace,
+  contaDaSessao,
+  coresDeConta,
   onActivate,
   onClose,
-  onReorder,
+  onMinimize,
+  onRestore,
+  onMove,
+  onRename,
 }: TabBarProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const dragFrom = useRef<number | null>(null);
+  const dragFrom = useRef<string | null>(null);
   const barraRef = useRef<HTMLElement | null>(null);
 
   const commitRename = (id: string, value: string) => {
     const title = value.trim();
-    onReorder((prev) =>
+    onRename((prev) =>
       prev.map((t) => (t.id === id ? { ...t, title: title || t.title } : t)),
     );
     setRenamingId(null);
@@ -1303,7 +1766,7 @@ function TabBar({
         el.scrollLeft += e.deltaY !== 0 ? e.deltaY : e.deltaX;
       }}
     >
-      {tabs.map((t, i) => (
+      {tabs.map((t) => (
         <div
           key={t.id}
           className={`tab ${t.id === activeTabId ? "active" : ""} ${tabStatus(t, sessions)}`}
@@ -1314,6 +1777,14 @@ function TabBar({
           aria-selected={t.id === activeTabId}
           onClick={() => onActivate(t.id)}
           onDoubleClick={() => setRenamingId(t.id)}
+          // Clique do meio minimiza. É a convenção oposta à do navegador (onde
+          // ele fecha), e de propósito: aqui fechar mata um processo, então o
+          // gesto rápido e sem confirmação tem que ser o reversível.
+          onAuxClick={(e) => {
+            if (e.button !== 1) return;
+            e.preventDefault();
+            onMinimize(t.id);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
@@ -1324,20 +1795,15 @@ function TabBar({
             }
           }}
           onDragStart={() => {
-            dragFrom.current = i;
+            dragFrom.current = t.id;
           }}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
             const from = dragFrom.current;
             dragFrom.current = null;
-            if (from === null || from === i) return;
-            onReorder((prev) => {
-              const next = [...prev];
-              const [moved] = next.splice(from, 1);
-              next.splice(i, 0, moved);
-              return next;
-            });
+            if (from === null || from === t.id) return;
+            onMove(from, t.id);
           }}
         >
           <span
@@ -1348,6 +1814,16 @@ function TabBar({
                 : undefined
             }
           />
+          {/* Anel na cor da conta do Claude Code em volta do ponto do
+              workspace. São duas informações independentes — projeto e login
+              — e um terminal do projeto A pode estar em qualquer conta. */}
+          {(() => {
+            const contaId = contaDaSessao[listLeaves(t.root)[0]?.sessionId];
+            const cor = contaId ? coresDeConta[contaId] : undefined;
+            return cor ? (
+              <span className="tab-conta" style={{ background: cor }} aria-hidden="true" />
+            ) : null;
+          })()}
           {renamingId === t.id ? (
             <input
               className="tab-rename"
@@ -1370,8 +1846,19 @@ function TabBar({
             </span>
           )}
           <button
+            className="x minimize"
+            title="Minimizar (Ctrl+Shift+M) — o terminal continua rodando"
+            aria-label={`Minimizar ${t.title}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMinimize(t.id);
+            }}
+          >
+            <Icon name="minimize" size={12} />
+          </button>
+          <button
             className="x"
-            title="Fechar aba"
+            title="Fechar aba — encerra o processo"
             aria-label={`Fechar ${t.title}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -1382,6 +1869,44 @@ function TabBar({
           </button>
         </div>
       ))}
+
+      {/* Bandeja das minimizadas. Fica grudada na direita (`sticky`) para
+          continuar alcançável quando a barra de abas rola — o dia em que ela
+          rola é justamente o dia em que se quer minimizar algo. */}
+      {minimized.length > 0 && (
+        <div
+          className="tab-tray"
+          role="group"
+          aria-label={`${minimized.length} terminais minimizados`}
+        >
+          <Icon name="minimize" size={12} />
+          {minimized.map((t) => (
+            <button
+              key={t.id}
+              className={`tab-tray-chip ${tabStatus(t, sessions)}`}
+              onClick={() => onRestore(t.id)}
+              title={`Restaurar ${t.title}`}
+              // Um clique do meio na bandeja fecha: é o par simétrico do
+              // clique do meio na aba, que trouxe ela pra cá.
+              onAuxClick={(e) => {
+                if (e.button !== 1) return;
+                e.preventDefault();
+                onClose(t.id);
+              }}
+            >
+              <span
+                className="dot"
+                style={
+                  t.workspaceId && coresDeWorkspace[t.workspaceId]
+                    ? { background: coresDeWorkspace[t.workspaceId] }
+                    : undefined
+                }
+              />
+              <span className="tab-tray-label">{t.title}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </nav>
   );
 }

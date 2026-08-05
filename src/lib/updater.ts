@@ -7,7 +7,11 @@
  * recusado — é isso que impede alguém de servir um "update" forjado.
  *
  * Nada aqui roda fora do app nativo: no navegador (dev e testes e2e) as
- * funções devolvem "sem atualização" em vez de estourar.
+ * funções devolvem `indisponivel` em vez de estourar.
+ *
+ * A decisão de *quando* checar e *o que mostrar* não mora aqui — está no
+ * `updateStore`, que orquestra, e no `updateRules`, que decide. Este arquivo
+ * é só a ponte com o plugin nativo.
  */
 
 /** O que a interface precisa saber sobre uma atualização disponível. */
@@ -18,9 +22,27 @@ export interface UpdateInfo {
   currentVersion: string;
   /** Notas da release, quando existirem. */
   notes: string | null;
+  /** Data de publicação em ISO, quando o manifesto trouxer. */
+  publishedAt: string | null;
   /** Executa o download e a instalação. Resolve quando está pronto. */
   install: (onProgress?: (baixado: number, total: number | null) => void) => Promise<void>;
 }
+
+/**
+ * Resultado de uma checagem.
+ *
+ * Erro é um estado de primeira classe, e não um `null` disfarçado: quem
+ * clicou em "Procurar atualizações" precisa saber a diferença entre "você
+ * está na última versão" e "não consegui falar com o servidor". Foi
+ * exatamente essa confusão que fez a versão anterior engolir toda falha em
+ * silêncio.
+ */
+export type CheckResult =
+  | { status: "disponivel"; update: UpdateInfo }
+  | { status: "atualizado"; version: string }
+  | { status: "erro"; message: string }
+  /** Fora do app nativo (navegador, dev, e2e): não há o que checar. */
+  | { status: "indisponivel" };
 
 /**
  * Mesma guarda de `onWindowCloseFlush`: o backend simulado instala
@@ -34,41 +56,89 @@ function noAppNativo(): boolean {
 }
 
 /**
- * Procura uma versão nova. Devolve `null` quando já está atualizado — e
- * também quando a checagem falha.
+ * Versão instalada, lida do binário — não do `package.json`, que é o número
+ * de quem compilou e não necessariamente o de quem está rodando.
  *
- * Falha de rede aqui não é erro do app: quem abriu o terminal sem internet
- * não pode ver um alerta vermelho por causa disso. O silêncio é intencional;
- * a próxima abertura tenta de novo.
+ * Devolve `null` fora do app nativo.
  */
-export async function checkForUpdate(): Promise<UpdateInfo | null> {
+export async function currentVersion(): Promise<string | null> {
   if (!noAppNativo()) return null;
+  try {
+    const { getVersion } = await import("@tauri-apps/api/app");
+    return await getVersion();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Consulta o endpoint de atualização.
+ *
+ * Nunca lança: toda falha vira `{ status: "erro" }` com a mensagem original,
+ * porque a interface tem lugar para mostrá-la e um `throw` aqui derrubaria a
+ * checagem de fundo que roda sozinha de tempos em tempos.
+ */
+export async function checkForUpdate(): Promise<CheckResult> {
+  if (!noAppNativo()) return { status: "indisponivel" };
 
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
     const update = await check();
-    if (!update) return null;
+
+    if (!update) {
+      const versao = (await currentVersion()) ?? "";
+      return { status: "atualizado", version: versao };
+    }
 
     return {
-      version: update.version,
-      currentVersion: update.currentVersion,
-      notes: update.body ?? null,
-      install: async (onProgress) => {
-        let baixado = 0;
-        let total: number | null = null;
-        await update.downloadAndInstall((e) => {
-          if (e.event === "Started") {
-            total = e.data.contentLength ?? null;
-          } else if (e.event === "Progress") {
-            baixado += e.data.chunkLength;
-            onProgress?.(baixado, total);
-          }
-        });
+      status: "disponivel",
+      update: {
+        version: update.version,
+        currentVersion: update.currentVersion,
+        notes: update.body ?? null,
+        publishedAt: update.date ?? null,
+        install: async (onProgress) => {
+          let baixado = 0;
+          let total: number | null = null;
+          await update.downloadAndInstall((e) => {
+            if (e.event === "Started") {
+              total = e.data.contentLength ?? null;
+              onProgress?.(0, total);
+            } else if (e.event === "Progress") {
+              baixado += e.data.chunkLength;
+              onProgress?.(baixado, total);
+            }
+          });
+        },
       },
     };
-  } catch {
-    return null;
+  } catch (e) {
+    return { status: "erro", message: mensagemDeErro(e) };
   }
+}
+
+/**
+ * Traduz a falha do plugin para algo que sirva na tela.
+ *
+ * As mensagens do plugin são em inglês e técnicas ("Network Error: error
+ * sending request for url..."). Os casos que de fato acontecem na vida real
+ * ganham um texto próprio; o resto passa cru, porque uma mensagem estranha
+ * ainda é melhor que "erro desconhecido" quando alguém precisa reportar o
+ * problema.
+ */
+function mensagemDeErro(e: unknown): string {
+  const bruto = e instanceof Error ? e.message : String(e);
+
+  if (/network|dns|connect|timeout|sending request/i.test(bruto)) {
+    return "Não consegui falar com o servidor de atualizações. Verifique sua conexão.";
+  }
+  if (/signature|verif/i.test(bruto)) {
+    return "A assinatura do pacote não confere — a atualização foi recusada por segurança.";
+  }
+  if (/404|not found/i.test(bruto)) {
+    return "O servidor não tem um manifesto de atualização publicado no momento.";
+  }
+  return bruto;
 }
 
 /**

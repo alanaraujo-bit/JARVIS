@@ -22,7 +22,9 @@ export interface WorkspaceStore {
   setActiveWorkspace: (id: string | null) => void;
   updateWorkspace: (
     id: string,
-    patch: Partial<Pick<Workspace, "name" | "color" | "defaultProfileId" | "autoCommand">>,
+    patch: Partial<
+      Pick<Workspace, "name" | "color" | "defaultProfileId" | "autoCommand" | "claudeAccountId">
+    >,
   ) => void;
   reorderWorkspaces: (updater: (prev: Workspace[]) => Workspace[]) => void;
   toggleSidebar: () => void;
@@ -46,6 +48,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         color: w.color,
         defaultProfileId: w.defaultProfileId,
         autoCommand: w.autoCommand ?? null,
+        claudeAccountId: w.claudeAccountId ?? null,
         createdAt: w.createdAt,
       }));
       set({
@@ -140,6 +143,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           color: w.color,
           defaultProfileId: w.defaultProfileId,
           autoCommand: w.autoCommand,
+          claudeAccountId: w.claudeAccountId,
           createdAt: w.createdAt,
         })),
         activeWorkspaceId,

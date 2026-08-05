@@ -21,6 +21,16 @@ export interface SavedTab {
   root: PaneNode;
   activePaneId: string;
   workspaceId: string | null;
+  /**
+   * Aba minimizada: fora da barra, na bandeja, com a sessão viva.
+   *
+   * Opcional porque todo arranjo gravado antes desta funcionalidade existir
+   * não tem o campo — e ausente tem que significar "aberta", não quebrar a
+   * leitura do arranjo inteiro.
+   */
+  minimized?: boolean;
+  /** Quando foi minimizada — só ordena o "restaurar a última". */
+  minimizedAt?: number;
 }
 
 export interface SavedLayout {
@@ -34,14 +44,18 @@ export function parseLayout(bruto: unknown): SavedLayout | null {
   const obj = bruto as Partial<SavedLayout>;
   if (!Array.isArray(obj.tabs)) return null;
 
-  const tabs = obj.tabs.filter(
-    (t): t is SavedTab =>
-      !!t &&
-      typeof t.id === "string" &&
-      typeof t.title === "string" &&
-      typeof t.activePaneId === "string" &&
-      arvoreValida(t.root),
-  );
+  const tabs = obj.tabs
+    .filter(
+      (t): t is SavedTab =>
+        !!t &&
+        typeof t.id === "string" &&
+        typeof t.title === "string" &&
+        typeof t.activePaneId === "string" &&
+        arvoreValida(t.root),
+    )
+    // Normaliza para booleano de verdade: o campo pode vir ausente (arranjo
+    // antigo) ou com qualquer coisa dentro (arquivo editado à mão).
+    .map((t) => ({ ...t, minimized: t.minimized === true }));
   if (tabs.length === 0) return null;
 
   return {

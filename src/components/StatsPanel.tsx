@@ -11,10 +11,13 @@ import { Icon } from "./Icon";
 
 import {
   claudeSettingsSet,
+  claudeUsageByAccount,
   claudeUsageSummary,
+  type ClaudeAccountUsage,
   type ClaudeUsageSummary,
   type SessionInfo,
 } from "../lib/ipc";
+import { useAccountStore } from "../stores/accountStore";
 import { computeStats, formatBytes, formatDuration } from "../lib/stats";
 
 /** Câmbio aproximado só pra dar uma ordem de grandeza em reais — não é cotação ao vivo. */
@@ -81,9 +84,41 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
   // com valores desatualizados por cima do que o usuário já estava vendo.
   const requisicaoRef = useRef(0);
 
+  /**
+   * Uso por conta. Com contas cadastradas, o total de "uma conta só" não
+   * significa nada — o que a pessoa precisa saber, antes de trocar, é qual
+   * das contas ainda tem folga na janela de 5h.
+   */
+  const contas = useAccountStore((s) => s.contas);
+  const statusContas = useAccountStore((s) => s.status);
+  const [porConta, setPorConta] = useState<ClaudeAccountUsage[]>([]);
+
+  /**
+   * Qual pasta de configuração o formulário de modelo/esforço lê e escreve.
+   * Com contas, a conta padrão; sem elas, `undefined` = o `~/.claude` de
+   * sempre. Escrever sempre no principal faria o ajuste "não pegar" nos
+   * terminais que rodam numa conta — sem nenhum sinal de que foi ignorado.
+   */
+  const padraoId = useAccountStore((s) => s.padraoId);
+  const dirDoFormulario = padraoId ? statusContas[padraoId]?.configDir : undefined;
+
   const carregarClaude = useCallback(() => {
     const minha = ++requisicaoRef.current;
-    void claudeUsageSummary()
+
+    const pares = contas
+      .map((c) => [c.id, statusContas[c.id]?.configDir] as const)
+      .filter((p): p is readonly [string, string] => !!p[1]);
+    if (pares.length > 0) {
+      void claudeUsageByAccount(pares.map(([id, dir]) => [id, dir]))
+        .then((lista) => {
+          if (requisicaoRef.current === minha) setPorConta(lista);
+        })
+        .catch(() => {});
+    } else {
+      setPorConta([]);
+    }
+
+    void claudeUsageSummary(dirDoFormulario)
       .then((s) => {
         if (requisicaoRef.current !== minha) return;
         setClaude(s);
@@ -95,7 +130,7 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
         if (requisicaoRef.current !== minha) return;
         setClaudeErro(String(e));
       });
-  }, []);
+  }, [contas, statusContas, dirDoFormulario]);
 
   useEffect(() => {
     if (open) carregarClaude();
@@ -106,14 +141,14 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
     const esforco = pendenteEsforco.trim();
     setSalvando(true);
     try {
-      await claudeSettingsSet(modelo || undefined, esforco || undefined);
+      await claudeSettingsSet(dirDoFormulario, modelo || undefined, esforco || undefined);
       carregarClaude();
     } catch (e) {
       setClaudeErro(String(e));
     } finally {
       setSalvando(false);
     }
-  }, [pendenteModelo, pendenteEsforco, carregarClaude]);
+  }, [pendenteModelo, pendenteEsforco, carregarClaude, dirDoFormulario]);
 
   const mudouConfig =
     !!claude && (pendenteModelo !== (claude.currentModel ?? "") || pendenteEsforco !== (claude.currentEffort ?? ""));
@@ -187,8 +222,51 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
           ))}
         </div>
 
+        {porConta.length > 0 && (
+          <div className="stats-section">
+            <h3>Uso por conta do Claude Code</h3>
+            <div className="stats-contas">
+              {porConta.map((u) => {
+                const conta = contas.find((c) => c.id === u.accountId);
+                if (!conta) return null;
+                return (
+                  <div key={u.accountId} className="stats-conta">
+                    <span className="stats-conta-nome">
+                      <span className="accounts-dot" style={{ background: conta.color }} />
+                      {conta.name}
+                    </span>
+                    {u.summary.noData ? (
+                      <span className="stats-conta-vazia">sem uso registrado</span>
+                    ) : (
+                      <>
+                        <span className="stats-conta-valor">
+                          {formatTokens(u.summary.tokensLast5h)}
+                          <small>tokens em 5h</small>
+                        </span>
+                        <span className="stats-conta-valor">
+                          {formatTokens(u.summary.tokensLast24h)}
+                          <small>em 24h</small>
+                        </span>
+                        <span className="stats-conta-valor">
+                          {formatUsd(u.summary.costLast5hUsd)}
+                          <small>custo em 5h</small>
+                        </span>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="stats-note stats-note-tight">
+              A janela de 5h é a aproximação mais próxima do limite da Anthropic que dá para
+              calcular só com o que fica gravado no disco — não é o contador oficial, e sim o
+              volume que cada conta consumiu no período.
+            </p>
+          </div>
+        )}
+
         <div className="stats-section">
-          <h3>Claude Code</h3>
+          <h3>{porConta.length > 0 ? "Configuração do Claude Code" : "Claude Code"}</h3>
 
           {claudeErro && <p className="stats-empty">Não foi possível ler o uso local: {claudeErro}</p>}
 

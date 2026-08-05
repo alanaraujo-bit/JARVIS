@@ -38,6 +38,7 @@ fn round_trip_real_em_disco_preserva_tudo() {
             color: "#5eead4".into(),
             default_profile_id: Some("pwsh".into()),
             auto_command: Some("claude".into()),
+            claude_account_id: Some("acc-pessoal".into()),
             created_at: 1_754_000_000_000,
         }],
         active_workspace_id: Some("w1".into()),
@@ -52,9 +53,18 @@ fn round_trip_real_em_disco_preserva_tudo() {
         ui: jarvis_lib::config::UiConfig {
             sidebar_open: true,
             ai_panel_open: false,
+            theme: "dark".into(),
+            density: "cozy".into(),
         },
         layout: Some(serde_json::json!({"tipo":"split","filhos":[1,2]})),
         session_history: None,
+        claude_accounts: vec![jarvis_lib::config::ClaudeAccountConfig {
+            id: "acc-pessoal".into(),
+            name: "Pessoal".into(),
+            color: "#a78bfa".into(),
+            created_at: 1_754_000_000_001,
+        }],
+        default_claude_account_id: Some("acc-pessoal".into()),
     };
 
     fs::write(&arquivo, serde_json::to_string_pretty(&original).unwrap()).unwrap();
@@ -67,6 +77,13 @@ fn round_trip_real_em_disco_preserva_tudo() {
     assert_eq!(lido.workspaces[0].default_profile_id.as_deref(), Some("pwsh"));
     assert_eq!(lido.workspaces[0].auto_command.as_deref(), Some("claude"));
     assert_eq!(lido.active_workspace_id.as_deref(), Some("w1"));
+    // A conta é o que decide qual login o terminal daquele projeto usa; se
+    // ela não sobrevivesse ao disco, todo reinício do app jogaria os
+    // workspaces de volta para a conta padrão sem avisar ninguém.
+    assert_eq!(lido.workspaces[0].claude_account_id.as_deref(), Some("acc-pessoal"));
+    assert_eq!(lido.claude_accounts.len(), 1);
+    assert_eq!(lido.claude_accounts[0].name, "Pessoal");
+    assert_eq!(lido.default_claude_account_id.as_deref(), Some("acc-pessoal"));
     assert_eq!(lido.ai.provider, AiProvider::Anthropic);
     assert_eq!(lido.ai.temperature, 0.35);
     assert_eq!(lido.ai.max_tokens, 8192);
@@ -87,6 +104,7 @@ fn as_chaves_gravadas_sao_camel_case_como_o_front_espera() {
             color: "#fff".into(),
             default_profile_id: None,
             auto_command: None,
+            claude_account_id: None,
             created_at: 7,
         }],
         ..Default::default()

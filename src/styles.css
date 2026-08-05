@@ -2540,3 +2540,695 @@ select {
     transform: translateX(300%);
   }
 }
+
+/* ------------------------- painel de atualizações ------------------------ */
+
+/* Aproveita a caixa do painel de estatísticas (`.stats`): mesmo backdrop,
+   mesmo cabeçalho, mesmo comportamento de Esc. O que muda é a largura — não
+   há grade de cartões aqui, e uma caixa larga deixaria as notas da release
+   como linhas de 900px, difíceis de acompanhar. */
+.update-panel {
+  max-width: 520px;
+}
+
+/* A caixa do `.stats` não tem padding próprio — cada filho carrega o seu, e
+   é `--space-6` na horizontal que dá a coluna comum. Blocos com fundo
+   ganham margem em vez de padding, senão encostam nas bordas do diálogo e
+   viram faixas. */
+.update-panel-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-5) var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-3);
+  border-radius: var(--radius-md);
+}
+
+.update-panel-versao {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.update-panel-estado {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.update-panel-erro {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0 var(--space-6) var(--space-5);
+  padding: var(--space-4);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-radius: var(--radius-md);
+}
+
+.update-panel-erro p {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* A saída manual é o plano B, não a mensagem principal — fica em tom de
+   nota para não competir com o erro em si. */
+.update-panel-erro-saida {
+  margin-top: var(--space-2) !important;
+  color: var(--text-muted);
+}
+
+.update-panel-progresso {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-6) var(--space-5);
+}
+
+/* No painel a barra tem espaço de sobra; a do aviso flutuante é estreita
+   porque divide a linha com o texto e os botões. */
+.update-panel-progresso .update-banner-bar {
+  width: auto;
+  flex: 1;
+  margin-left: 0;
+  height: 6px;
+}
+
+.update-panel-progresso span {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.update-panel-data {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.update-panel-notas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.update-panel-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: 0 var(--space-6) var(--space-4);
+}
+
+/* ========================= contas do Claude Code ========================= */
+
+/**
+ * Distintivo da conta na topbar, ao lado do workspace. É um botão (abre o
+ * painel), mas veste-se como o `.ws-badge` de propósito: as duas coisas são
+ * o mesmo tipo de informação — "em que contexto os terminais vão nascer".
+ */
+.account-badge {
+  border-style: dashed;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.account-badge:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* Marca a escolha manual, que vale só até alguém desfazê-la. Sem isto,
+   "conta X" na barra fica indistinguível de uma configuração permanente. */
+.account-badge-pin {
+  color: var(--accent);
+  font-size: 15px;
+  line-height: 1;
+}
+
+/**
+ * Ponto da conta na aba, ao lado do ponto do workspace.
+ *
+ * Menor e sem preencher a linha: são duas dimensões independentes (projeto e
+ * login), e dois pontos do mesmo tamanho brigariam pela atenção sem dizer
+ * qual é qual.
+ */
+.tab-conta {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  flex: none;
+  margin-left: -3px;
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
+.accounts-panel {
+  max-width: 560px;
+}
+
+.accounts-vazio {
+  padding: var(--space-5) var(--space-6);
+  line-height: var(--leading-normal);
+}
+
+.accounts-erro {
+  display: block;
+}
+
+.accounts-lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-4) var(--space-6);
+  list-style: none;
+}
+
+.accounts-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.accounts-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.accounts-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  /* Empurra as ações para a direita sem precisar de `margin-left: auto` em
+     cada botão. */
+  flex: 1;
+}
+
+/* Botão, e não texto: um clique renomeia. Mas não pode PARECER botão, senão
+   a lista vira uma fileira de controles competindo com as ações de verdade. */
+.accounts-nome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  text-align: left;
+  cursor: text;
+}
+
+.accounts-rename {
+  max-width: 200px;
+}
+
+.accounts-tag {
+  padding: 1px var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--accent);
+  background: var(--accent-quiet);
+  border-radius: var(--radius-full);
+}
+
+.accounts-estado {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.accounts-estado.ok {
+  color: var(--ok);
+}
+
+/* Pendência não é erro: a conta existe, só falta um login. Cor de aviso, e
+   não de perigo. */
+.accounts-estado.pendente {
+  color: var(--warn);
+}
+
+.accounts-acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* -------------------- uso por conta no painel de stats ------------------- */
+
+.stats-contas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.stats-conta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+}
+
+.stats-conta-nome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-conta-valor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-size: var(--text-sm);
+  /* Tabular para as três colunas não dançarem na horizontal quando um
+     número ganha um dígito. */
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.stats-conta-valor small {
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.stats-conta-vazia {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+
+/* Numa janela estreita as três colunas de número não cabem ao lado do nome. */
+@media (max-width: 620px) {
+  .stats-conta {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+
+  .stats-conta-nome {
+    flex-basis: 100%;
+  }
+
+  .accounts-item {
+    flex-wrap: wrap;
+  }
+}
+
+/* Aviso na topbar: o ícone já diz "atualizar", o ponto diz "agora". */
+.update-flag {
+  position: relative;
+  color: var(--accent);
+}
+
+.update-flag::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  animation: update-flag-pulsa 2.4s var(--ease-fluid) infinite;
+}
+
+@keyframes update-flag-pulsa {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-flag::after {
+    animation: none;
+  }
+}
+
+/* ========================= histórico de terminais ======================= */
+
+/* Larga de propósito: à esquerda a lista de sessões, à direita o terminal
+   que reproduz a gravada. Um layout de coluna única obrigaria a ir e voltar
+   entre "qual sessão era" e "o que tinha nela" — que é exatamente a dúvida
+   que esta tela existe para resolver. */
+.history {
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 94vw);
+  height: min(82vh, 820px);
+  background: var(--surface-1);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  animation: jarvis-rise var(--dur-normal) var(--ease-spring) backwards;
+}
+
+.history-backdrop {
+  align-items: center;
+}
+
+.history-header {
+  flex: 0 0 auto;
+}
+
+.history-header-sub {
+  margin-left: var(--space-4);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-normal);
+  color: var(--text-muted);
+}
+
+.history-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.history-erro {
+  padding: var(--space-4) var(--space-6);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.history-body {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  min-height: 0;
+}
+
+/* ------------------------------- a lista ------------------------------- */
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  border-right: var(--border-width) solid var(--border-subtle);
+}
+
+.history-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  color: var(--text-muted);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  /* Grudada no topo: rolar uma lista de meses não pode levar embora a única
+     forma de filtrá-la. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-1);
+}
+
+.history-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.history-group-label {
+  padding: var(--space-5) var(--space-5) var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  transition: background var(--dur-fast) var(--ease-fluid);
+}
+
+.history-item:hover {
+  background: var(--surface-2);
+}
+
+.history-item.active {
+  background: var(--surface-2);
+  border-left-color: var(--ws-color, var(--accent));
+}
+
+.history-item-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.history-item-title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-time {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: var(--numeric);
+}
+
+.history-item-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------- a reprodução ----------------------------- */
+
+.history-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.history-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.history-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.history-preview-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-preview-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.history-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+}
+
+.history-replay {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.history-replay-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding-right: var(--space-6);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.history-replay-search {
+  flex: 0 1 320px;
+  border-bottom: none;
+  position: static;
+}
+
+.history-replay-aviso {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* O xterm precisa de uma caixa com altura real para medir; sem `min-height:0`
+   num filho de flex, ele herda `auto` e cresce até estourar o diálogo. */
+.history-replay-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-inset);
+  overflow: hidden;
+}
+
+.chip.danger {
+  color: var(--danger);
+  border-color: currentColor;
+}
+
+/* Abaixo disto as duas colunas não cabem lado a lado sem espremer as duas. */
+@media (max-width: 860px) {
+  .history-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(140px, 34%) 1fr;
+  }
+
+  .history-list {
+    border-right: none;
+    border-bottom: var(--border-width) solid var(--border-subtle);
+  }
+}
+
+/* ===================== bandeja de abas minimizadas ===================== */
+
+/* Grudada na direita do container que rola: quando a barra de abas passa da
+   largura da janela — exatamente a situação que faz alguém querer minimizar
+   algo — a bandeja continua no lugar em vez de escapar para fora da vista.
+   O `margin-left: auto` cuida do caso oposto, com a barra vazia. */
+.tab-tray {
+  position: sticky;
+  right: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  max-width: 45%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  height: calc(var(--tabbar-h) - 8px);
+  color: var(--text-muted);
+  background: var(--bg);
+  /* Um degradê à esquerda em vez de uma borda dura: a aba que passa por
+     baixo some em vez de encostar num traço e parecer cortada. */
+  mask-image: linear-gradient(to right, transparent, black var(--space-5));
+  -webkit-mask-image: linear-gradient(to right, transparent, black var(--space-5));
+}
+
+.tab-tray::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-tray-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+  max-width: 120px;
+  height: calc(var(--tabbar-h) - 14px);
+  padding: 0 var(--space-4);
+  background: var(--surface-2);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-fluid),
+    background-color var(--dur-fast) var(--ease-fluid);
+}
+
+.tab-tray-chip:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+/* Um terminal minimizado que morreu é o pior caso: some da vista e ninguém
+   fica sabendo. A pastilha precisa dizer isso sozinha. */
+.tab-tray-chip.dead,
+.tab-tray-chip.partial {
+  color: var(--danger);
+  border-color: var(--danger-quiet);
+}
+
+/* O ponto de estado repete as regras de `.tab .dot` em vez de reusá-las: o
+   seletor de lá é `.tab .dot`, e a pastilha da bandeja não é uma `.tab`. */
+.tab-tray-chip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+
+.tab-tray-chip.dead .dot {
+  background: var(--danger);
+}
+
+.tab-tray-chip.partial .dot {
+  background: var(--warn);
+}
+
+.tab-tray-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* O botão de minimizar segue as mesmas regras de aparição do de fechar (que
+   já estão em `.tab .x`); só o hover muda, porque minimizar não é destrutivo
+   e não deve piscar em vermelho. */
+.tab .x.minimize:hover {
+  color: var(--text);
+  background: var(--surface-1);
+}

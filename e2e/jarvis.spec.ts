@@ -146,6 +146,106 @@ test("as setas navegam a paleta e a busca sem resultado avisa", async ({ page })
   await expect(page.getByRole("dialog", { name: "Paleta de comandos" })).toBeVisible();
 });
 
+/** Abre o painel de contas pela paleta de comandos. */
+async function abreContas(page: Page) {
+  await page.keyboard.press("Control+Shift+P");
+  await page.locator(".palette-input").fill("contas do claude");
+  await page.keyboard.press("Enter");
+  const painel = page.getByRole("dialog", { name: "Contas do Claude Code" });
+  await expect(painel).toBeVisible();
+  return painel;
+}
+
+test("criar uma conta e importar o login existente deixa ela pronta para uso", async ({ page }) => {
+  const painel = await abreContas(page);
+  await expect(painel).toContainText("Nenhuma conta cadastrada");
+
+  await painel.getByRole("button", { name: "Nova conta" }).click();
+
+  const item = painel.locator(".accounts-item").first();
+  await expect(item).toBeVisible();
+  // Conta recém-criada não tem login: é isso que faz o botão "Entrar"
+  // aparecer, e some quando ela passa a ter.
+  await expect(item.locator(".accounts-estado")).toHaveText("sem login");
+  await expect(item.getByRole("button", { name: "Entrar" })).toBeVisible();
+
+  await item.getByRole("button", { name: "Usar o login atual" }).click();
+  await expect(item.locator(".accounts-estado")).toHaveText("PRO");
+  await expect(item.getByRole("button", { name: "Entrar" })).toHaveCount(0);
+
+  // A primeira conta vira a padrão sozinha e passa a valer para os próximos
+  // terminais — o que a barra de cima tem que anunciar.
+  await expect(item.locator(".accounts-tag")).toHaveText("padrão");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".account-badge")).toBeVisible();
+});
+
+test("a conta sobrevive ao recarregar e vale para os terminais abertos depois", async ({ page }) => {
+  const painel = await abreContas(page);
+  await painel.getByRole("button", { name: "Nova conta" }).click();
+  await painel.locator(".accounts-item").first().getByRole("button", { name: "Usar o login atual" }).click();
+  await expect(painel.locator(".accounts-estado")).toHaveText("PRO");
+  await page.keyboard.press("Escape");
+
+  await page.reload();
+  await expect(page.locator(".app")).toBeVisible();
+  await expect(page.locator(".account-badge")).toBeVisible();
+
+  // O terminal nasce marcado com a conta: é o ponto extra no lado da aba.
+  await page.getByRole("button", { name: /PowerShell 7/ }).click();
+  await expect(page.locator(".tab-conta")).toHaveCount(1);
+});
+
+test("remover uma conta pede confirmação e limpa o distintivo da barra", async ({ page }) => {
+  const painel = await abreContas(page);
+  await painel.getByRole("button", { name: "Nova conta" }).click();
+  const item = painel.locator(".accounts-item").first();
+  await expect(item).toBeVisible();
+
+  await item.getByRole("button", { name: /^Remover/ }).click();
+  // Um clique não apaga: o passo de confirmação é o que separa "cliquei sem
+  // querer" de "quero perder o login desta conta".
+  await expect(item.getByRole("button", { name: "Apagar mesmo" })).toBeVisible();
+  await expect(painel.locator(".accounts-item")).toHaveCount(1);
+
+  await item.getByRole("button", { name: "Apagar mesmo" }).click();
+  await expect(painel.locator(".accounts-item")).toHaveCount(0);
+  await expect(painel).toContainText("Nenhuma conta cadastrada");
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".account-badge")).toHaveCount(0);
+});
+
+test("o painel de uso mostra uma linha por conta", async ({ page }) => {
+  const painel = await abreContas(page);
+  await painel.getByRole("button", { name: "Nova conta" }).click();
+  await painel.getByRole("button", { name: "Nova conta" }).click();
+  await expect(painel.locator(".accounts-item")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+
+  await page.keyboard.press("Control+Shift+S");
+  const stats = page.getByRole("dialog", { name: "Estatísticas de uso" });
+  await expect(stats).toBeVisible();
+  await expect(stats).toContainText("Uso por conta do Claude Code");
+  await expect(stats.locator(".stats-conta")).toHaveCount(2);
+});
+
+test("o painel de atualizações abre pela paleta e fecha com Esc", async ({ page }) => {
+  await page.keyboard.press("Control+Shift+P");
+  await page.locator(".palette-input").fill("atualiza");
+  await page.keyboard.press("Enter");
+
+  const painel = page.getByRole("dialog", { name: "Atualizações" });
+  await expect(painel).toBeVisible();
+  // No navegador não existe plugin nativo: o painel tem que dizer isso em
+  // vez de ficar rodando um "procurando…" que nunca termina.
+  await expect(painel).toContainText("aplicativo instalado");
+  await expect(painel.getByRole("button", { name: /Procurar atualizações/ })).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(painel).toBeHidden();
+});
+
 test("as estatísticas refletem as sessões abertas", async ({ page }) => {
   await page.getByRole("button", { name: /PowerShell 7/ }).click();
   await page.getByRole("button", { name: /Git Bash/ }).click();

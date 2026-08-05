@@ -41,6 +41,13 @@ pub struct SpawnOptions {
     /// que iniciar o agente na mão toda vez.
     #[serde(default)]
     pub initial_command: Option<String>,
+    /// Workspace em que o terminal nasceu. Só serve ao histórico gravado:
+    /// sem isso, a lista de sessões antigas seria um monte de caminhos sem
+    /// dizer a que projeto cada um pertencia.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
+    pub workspace_name: Option<String>,
 }
 
 fn default_cols() -> u16 {

@@ -13,6 +13,9 @@ export interface SpawnOptions {
   title?: string;
   profileId?: string;
   initialCommand?: string;
+  /** Só alimenta o histórico gravado — o motor não usa para nada. */
+  workspaceId?: string | null;
+  workspaceName?: string | null;
 }
 
 export interface SessionInfo {
@@ -153,6 +156,45 @@ export const ptySnapshot = (id: string) =>
 
 export const ptyList = () => invoke<SessionInfo[]>("pty_list");
 
+/* ------------------- histórico gravado dos terminais -------------------- */
+
+/** Espelho de `TranscriptMeta` em `src-tauri/src/transcript.rs`. */
+export interface TranscriptMeta {
+  id: string;
+  title: string;
+  program: string;
+  args: string[];
+  cwd: string;
+  profileId: string | null;
+  workspaceId: string | null;
+  workspaceName: string | null;
+  autoCommand: string | null;
+  startedAt: number;
+  /** `null` só enquanto a sessão está viva nesta execução. */
+  endedAt: number | null;
+  exitCode: number | null;
+  /** O começo da gravação foi descartado por ter passado do teto de tamanho. */
+  truncated: boolean;
+  bytes: number;
+}
+
+export interface TranscriptData {
+  /** Bytes crus do PTY, com as sequências ANSI intactas. */
+  b64: string;
+  totalBytes: number;
+  /** Só a cauda do arquivo veio nesta leitura. */
+  truncated: boolean;
+}
+
+export const transcriptList = () => invoke<TranscriptMeta[]>("transcript_list");
+
+export const transcriptRead = (id: string, maxBytes?: number) =>
+  invoke<TranscriptData>("transcript_read", { id, maxBytes });
+
+export const transcriptDelete = (id: string) => invoke<void>("transcript_delete", { id });
+
+export const transcriptClear = () => invoke<void>("transcript_clear");
+
 export const shellsDetect = () => invoke<ShellProfile[]>("shells_detect");
 
 export const appHomeDir = () => invoke<string>("app_home_dir");
@@ -191,6 +233,16 @@ export interface WorkspaceConfigPayload {
   color: string;
   defaultProfileId: string | null;
   autoCommand?: string | null;
+  /** Conta do Claude Code dos terminais deste projeto. `null` = a conta padrão. */
+  claudeAccountId?: string | null;
+  createdAt: number;
+}
+
+/** Espelho de `ClaudeAccountConfig` em `src-tauri/src/config.rs`. */
+export interface ClaudeAccountPayload {
+  id: string;
+  name: string;
+  color: string;
   createdAt: number;
 }
 
@@ -216,6 +268,9 @@ export interface AppConfig {
   layout?: unknown;
   /** Histórico recente de sessões de terminal, também JSON opaco (veja `src/lib/sessionHistory.ts`). */
   sessionHistory?: unknown;
+  claudeAccounts: ClaudeAccountPayload[];
+  /** Conta usada por terminais que não herdam nada de um workspace. */
+  defaultClaudeAccountId: string | null;
 }
 
 /**
@@ -374,9 +429,62 @@ export interface ClaudeSettings {
   effortLevel: string | null;
 }
 
-export const claudeUsageSummary = () => invoke<ClaudeUsageSummary>("claude_usage_summary");
+/**
+ * `configDir` ausente = a configuração principal (`~/.claude`), que é o que
+ * a CLI usa para quem não cadastrou conta nenhuma. Com contas, cada uma tem
+ * sua pasta e o mesmo comando serve às duas situações.
+ */
+export const claudeUsageSummary = (configDir?: string) =>
+  invoke<ClaudeUsageSummary>("claude_usage_summary", { configDir });
 
-export const claudeSettingsGet = () => invoke<ClaudeSettings>("claude_settings_get");
+export const claudeSettingsGet = (configDir?: string) =>
+  invoke<ClaudeSettings>("claude_settings_get", { configDir });
 
-export const claudeSettingsSet = (model?: string, effortLevel?: string) =>
-  invoke<void>("claude_settings_set", { model, effortLevel });
+export const claudeSettingsSet = (configDir?: string, model?: string, effortLevel?: string) =>
+  invoke<void>("claude_settings_set", { configDir, model, effortLevel });
+
+/* ------------------------ contas do Claude Code -------------------------- */
+
+/** Espelho de `claude_accounts::AccountStatus`. Nunca traz token nenhum. */
+export interface ClaudeAccountStatus {
+  id: string;
+  /** Caminho que vira `CLAUDE_CONFIG_DIR` nos terminais desta conta. */
+  configDir: string;
+  prepared: boolean;
+  loggedIn: boolean;
+  /** `"pro"`, `"max"`… como a CLI grava. `null` quando não logada. */
+  subscriptionType: string | null;
+  /** Epoch em ms do fim da validade do token de acesso. */
+  expiresAt: number | null;
+  rateLimitTier: string | null;
+}
+
+export interface ClaudeAccountUsage {
+  accountId: string;
+  summary: ClaudeUsageSummary;
+}
+
+/** Cria a pasta da conta. `seed` copia `settings.json`/`CLAUDE.md` de `~/.claude`. */
+export const claudeAccountPrepare = (id: string, seed: boolean) =>
+  invoke<string>("claude_account_prepare", { id, seed });
+
+export const claudeAccountsStatus = (ids: string[]) =>
+  invoke<ClaudeAccountStatus[]>("claude_accounts_status", { ids });
+
+/** Uma varredura por conta numa chamada só — o painel mostra todas juntas. */
+export const claudeUsageByAccount = (accounts: [string, string][]) =>
+  invoke<ClaudeAccountUsage[]>("claude_usage_by_account", { accounts });
+
+/** Copia para a conta o login que já existe em `~/.claude`. */
+export const claudeAccountImport = (id: string) =>
+  invoke<void>("claude_account_import", { id });
+
+/** Sai da conta, preservando preferências e histórico dela. */
+export const claudeAccountLogout = (id: string) =>
+  invoke<void>("claude_account_logout", { id });
+
+/** Apaga a pasta inteira da conta. */
+export const claudeAccountForget = (id: string) =>
+  invoke<void>("claude_account_forget", { id });
+
+export const claudeDefaultLoginExists = () => invoke<boolean>("claude_default_login_exists");

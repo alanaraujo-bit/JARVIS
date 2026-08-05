@@ -117,7 +117,24 @@ export function installDevMock(): void {
       maxTokens: 2048,
     },
     ui: { sidebarOpen: false, aiPanelOpen: false, theme: "system", density: "cozy" },
+    claudeAccounts: [],
+    defaultClaudeAccountId: null,
   };
+
+  /**
+   * Estado das pastas de conta — o que no app de verdade é a existência do
+   * diretório e do `.credentials.json` dentro dele.
+   */
+  const CONTAS_KEY = "jarvis-dev-claude-accounts";
+  const leContasMock = (): Record<string, { loggedIn: boolean }> => {
+    try {
+      return JSON.parse(localStorage.getItem(CONTAS_KEY) ?? "{}");
+    } catch {
+      return {};
+    }
+  };
+  const gravaContasMock = (v: Record<string, { loggedIn: boolean }>) =>
+    localStorage.setItem(CONTAS_KEY, JSON.stringify(v));
 
   const leConfig = (): Record<string, unknown> => {
     try {
@@ -126,6 +143,27 @@ export function installDevMock(): void {
       return { ...configPadrao };
     }
   };
+
+  // Histórico gravado. No app de verdade quem grava é o Rust, num arquivo por
+  // sessão; aqui basta acumular a mesma string que o PTY simulado emite.
+  const TRANSCRITOS_KEY = "jarvis-dev-transcripts";
+  interface FakeTranscript {
+    meta: Record<string, unknown>;
+    conteudo: string;
+  }
+  const transcritos = new Map<string, FakeTranscript>(
+    JSON.parse(sessionStorage.getItem(TRANSCRITOS_KEY) ?? "[]") as [string, FakeTranscript][],
+  );
+  const salvaTranscritos = () =>
+    sessionStorage.setItem(TRANSCRITOS_KEY, JSON.stringify([...transcritos.entries()]));
+
+  function encerraTranscrito(id: string, exitCode: number | null) {
+    const t = transcritos.get(id);
+    if (!t || t.meta.endedAt !== null) return;
+    t.meta.endedAt = Date.now();
+    t.meta.exitCode = exitCode;
+    salvaTranscritos();
+  }
 
   function emite(evento: string, payload: unknown) {
     for (const [id, o] of ouvintes) {
@@ -137,6 +175,11 @@ export function installDevMock(): void {
     s.buffer += texto;
     s.bytesOut += texto.length;
     salvaSessoes();
+    const t = transcritos.get(s.id);
+    if (t) {
+      t.conteudo += texto;
+      salvaTranscritos();
+    }
     emite(`pty:data:${s.id}`, { id: s.id, b64: toB64(texto), seq: s.bytesOut });
   }
 
@@ -153,6 +196,7 @@ export function installDevMock(): void {
       s.alive = false;
       s.exitCode = 0;
       escreve(s, "\r\n");
+      encerraTranscrito(s.id, 0);
       emite("pty:exit", { id: s.id, exitCode: 0, endedAt: Date.now() });
       return;
     } else if (cmd.startsWith("echo ")) {
@@ -195,6 +239,25 @@ export function installDevMock(): void {
       };
       sessions.set(id, s);
       salvaSessoes();
+      transcritos.set(id, {
+        meta: {
+          id,
+          title: s.title,
+          program: s.program,
+          args: s.args,
+          cwd: s.cwd,
+          profileId: s.profileId,
+          workspaceId: (opts.workspaceId as string | null) ?? null,
+          workspaceName: (opts.workspaceName as string | null) ?? null,
+          autoCommand: (opts.initialCommand as string | null) ?? null,
+          startedAt: s.startedAt,
+          endedAt: null,
+          exitCode: null,
+          truncated: false,
+        },
+        conteudo: "",
+      });
+      salvaTranscritos();
       const comandoInicial = (opts.initialCommand as string | undefined)?.trim();
       // Assíncrono como o de verdade: o painel monta antes do primeiro byte.
       setTimeout(() => {
@@ -257,14 +320,48 @@ export function installDevMock(): void {
       if (s?.alive) {
         s.alive = false;
         s.exitCode = 1;
+        encerraTranscrito(s.id, 1);
         emite("pty:exit", { id: s.id, exitCode: 1, endedAt: Date.now() });
       }
       return null;
     },
 
     pty_close: (args) => {
-      sessions.delete((args as unknown as { id: string }).id);
+      const { id } = args as unknown as { id: string };
+      sessions.delete(id);
       salvaSessoes();
+      // Igual ao de verdade: a sessão some, a gravação fica.
+      encerraTranscrito(id, null);
+      return null;
+    },
+
+    transcript_list: () => {
+      const lista: Record<string, unknown>[] = [...transcritos.values()].map((t) => ({
+        ...t.meta,
+        bytes: encoder.encode(t.conteudo).length,
+      }));
+      return lista
+        .filter((m) => (m.bytes as number) > 0 || m.endedAt === null)
+        .sort((a, b) => (b.startedAt as number) - (a.startedAt as number));
+    },
+
+    transcript_read: (args) => {
+      const { id } = args as unknown as { id: string };
+      const t = transcritos.get(id);
+      if (!t) throw new Error(`sessão não encontrada: ${id}`);
+      const bytes = encoder.encode(t.conteudo);
+      return { b64: toB64(t.conteudo), totalBytes: bytes.length, truncated: false };
+    },
+
+    transcript_delete: (args) => {
+      transcritos.delete((args as unknown as { id: string }).id);
+      salvaTranscritos();
+      return null;
+    },
+
+    transcript_clear: () => {
+      transcritos.clear();
+      salvaTranscritos();
       return null;
     },
 
@@ -320,6 +417,79 @@ export function installDevMock(): void {
       if (effortLevel) atual.effortLevel = effortLevel;
       localStorage.setItem(CLAUDE_SETTINGS_KEY, JSON.stringify(atual));
       return null;
+    },
+
+    /* --------------------- contas do Claude Code ----------------------- */
+    // O estado das contas mora no `localStorage` para sobreviver a um F5,
+    // como o de verdade sobrevive no disco: sem isso, "criei a conta e
+    // recarreguei" pareceria um bug do app em vez de limitação do mock.
+
+    claude_account_prepare: (args) => {
+      const { id } = args as unknown as { id: string };
+      const contas = leContasMock();
+      contas[id] ??= { loggedIn: false };
+      gravaContasMock(contas);
+      return `C:\\Users\\dev\\AppData\\Roaming\\JARVIS\\claude-accounts\\${id}`;
+    },
+
+    claude_accounts_status: (args) => {
+      const { ids } = args as unknown as { ids: string[] };
+      const contas = leContasMock();
+      return ids.map((id) => ({
+        id,
+        configDir: `C:\\Users\\dev\\AppData\\Roaming\\JARVIS\\claude-accounts\\${id}`,
+        prepared: !!contas[id],
+        loggedIn: !!contas[id]?.loggedIn,
+        subscriptionType: contas[id]?.loggedIn ? "pro" : null,
+        expiresAt: contas[id]?.loggedIn ? Date.now() + 86_400_000 : null,
+        rateLimitTier: contas[id]?.loggedIn ? "default_claude_ai" : null,
+      }));
+    },
+
+    claude_account_import: (args) => {
+      const { id } = args as unknown as { id: string };
+      const contas = leContasMock();
+      contas[id] = { loggedIn: true };
+      gravaContasMock(contas);
+      return null;
+    },
+
+    claude_account_logout: (args) => {
+      const { id } = args as unknown as { id: string };
+      const contas = leContasMock();
+      if (contas[id]) contas[id].loggedIn = false;
+      gravaContasMock(contas);
+      return null;
+    },
+
+    claude_account_forget: (args) => {
+      const { id } = args as unknown as { id: string };
+      const contas = leContasMock();
+      delete contas[id];
+      gravaContasMock(contas);
+      return null;
+    },
+
+    claude_default_login_exists: () => true,
+
+    claude_usage_by_account: (args) => {
+      const { accounts } = args as unknown as { accounts: [string, string][] };
+      // Números diferentes por conta de propósito: uma coluna que repete o
+      // mesmo valor três vezes não prova que o painel está lendo cada pasta.
+      return accounts.map(([accountId], i) => ({
+        accountId,
+        summary: {
+          currentModel: "sonnet",
+          currentEffort: "low",
+          byModel: [],
+          tokensLast5h: 120_000 * (i + 1),
+          tokensLast24h: 480_000 * (i + 1),
+          costLast5hUsd: 1.25 * (i + 1),
+          costTotalUsd: 12.5 * (i + 1),
+          totalEvents: 100 * (i + 1),
+          noData: false,
+        },
+      }));
     },
 
     open_folder_dialog: () => {

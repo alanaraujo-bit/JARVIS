@@ -17,6 +17,12 @@ export interface Workspace {
    * termina de abrir (ex.: "claude"). `null`/vazio desliga o auto-início.
    */
   autoCommand: string | null;
+  /**
+   * Conta do Claude Code usada pelos terminais deste projeto. `null` = a
+   * conta padrão do app. É o que permite ter o cliente A numa conta e o
+   * projeto pessoal em outra sem escolher nada na hora de abrir.
+   */
+  claudeAccountId: string | null;
   /** Epoch em ms. */
   createdAt: number;
 }
@@ -57,6 +63,7 @@ export function createWorkspace(
     color: nextColor(existingCount),
     defaultProfileId: null,
     autoCommand: null,
+    claudeAccountId: null,
     createdAt: Date.now(),
   };
 }

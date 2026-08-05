@@ -46,6 +46,12 @@ workspace, o shell ativo e as últimas linhas visíveis do terminal — então d
 para colar um erro de build e perguntar "o que é isso?". Blocos de código
 sugeridos têm botão para executar direto no terminal ativo.
 
+**Contas do Claude Code.** Várias contas cadastradas no app, cada uma com sua
+pasta de configuração isolada, e um terminal pode nascer em qualquer uma delas
+— sem `logout`/`login` no meio do caminho. Um projeto pode fixar sua conta, e
+o painel de uso mostra quanto cada conta consumiu nas últimas 5h e 24h. Veja
+[Contas do Claude Code](#contas-do-claude-code).
+
 **Paleta de comandos** (`Ctrl+Shift+P`) com busca por subsequência, e
 **dashboard de estatísticas** (`Ctrl+Shift+S`) alimentado pelos contadores que
 o motor de PTY já mantém.
@@ -73,6 +79,47 @@ As combinações evitam de propósito `Ctrl+T`, `Ctrl+W` e `Alt+Seta`, que os
 shells já reivindicam para transpor caractere, apagar palavra e mover o cursor.
 Nenhum atalho dispara enquanto se digita num campo da própria interface — mas
 todos funcionam com o terminal em foco, que é onde eles precisam funcionar.
+
+## Contas do Claude Code
+
+A CLI `claude` guarda login, preferências e histórico num único diretório
+(`~/.claude`) e respeita a variável `CLAUDE_CONFIG_DIR`. É só disso que o
+recurso é feito: cada conta cadastrada no JARVIS ganha uma pasta em
+`%APPDATA%/JARVIS/claude-accounts/<id>`, e o terminal que a usa nasce com
+`CLAUDE_CONFIG_DIR` apontando para lá. Duas contas podem rodar ao mesmo tempo,
+em abas diferentes, sem nenhuma interferir na outra.
+
+**Cadastrando.** `Ctrl+Shift+P` → "Contas do Claude Code" → *Nova conta*. A
+pasta nasce semeada com o `settings.json` e o `CLAUDE.md` da sua configuração
+principal — sem isso cada conta nova se comportaria diferente das outras sem
+explicação. Depois, ou *Usar o login atual* (copia o login que já existe em
+`~/.claude`) ou *Entrar*, que abre um terminal já na pasta certa com o `claude`
+rodando para você fazer `/login` uma vez.
+
+**Escolhendo qual conta.** Em ordem de precedência:
+
+1. a escolha manual da paleta ("Usar a conta X nos próximos terminais");
+2. a conta fixada no projeto ativo ("Fixar a conta X no projeto…");
+3. a conta padrão do app.
+
+O distintivo pontilhado na barra de cima mostra o resultado dessa conta —
+onde o próximo `claude` vai rodar de verdade — e cada aba ganha um ponto na
+cor da conta em que ela nasceu. Terminais já abertos não mudam de conta:
+a troca vale para os próximos.
+
+**Quanto sobrou.** O painel de estatísticas (`Ctrl+Shift+S`) lê a pasta de
+cada conta e mostra tokens em 5h/24h e custo estimado por conta. A janela de
+5h é a aproximação mais próxima do limite da Anthropic que dá para calcular
+com o que fica gravado localmente — não é o contador oficial.
+
+**O que fica separado.** Tudo: login, `settings.json`, `CLAUDE.md`, MCP
+servers e histórico de conversas. Uma conta não enxerga nada da outra, e é
+por isso que o `settings.json` que o painel edita é o da conta padrão.
+
+> Um aviso honesto: alternar contas para contornar limite de uso é tratado
+> como circunvenção pela política de uso da Anthropic, com risco de suspensão.
+> Manter contas separadas por contexto (pessoal, trabalho, cliente) é uso
+> normal — a ferramenta serve aos dois casos, a escolha é sua.
 
 ## Rodando
 

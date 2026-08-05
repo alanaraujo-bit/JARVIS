@@ -8,6 +8,7 @@ use crate::protocol::{
     AiContext, AiMessage, ResizeResult, SessionInfo, ShellProfile, SnapshotPayload, SpawnOptions,
 };
 use crate::pty::PtyManager;
+use crate::transcript::{TranscriptData, TranscriptMeta};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::Manager;
@@ -89,6 +90,49 @@ pub fn pty_snapshot(manager: State<'_, PtyManager>, id: String) -> Result<Snapsh
 #[tauri::command(async)]
 pub fn pty_list(manager: State<'_, PtyManager>) -> Vec<SessionInfo> {
     manager.list()
+}
+
+/* ------------------- histórico gravado dos terminais -------------------- */
+
+/// O histórico é opcional no motor (ver `PtyManager::with_transcript`), mas
+/// no app ele sempre existe. Um erro claro é melhor que uma lista vazia que
+/// finge que o usuário nunca abriu terminal nenhum.
+fn transcritos(manager: &PtyManager) -> Result<&Arc<crate::transcript::TranscriptStore>> {
+    manager
+        .transcripts()
+        .ok_or_else(|| JarvisError::ConfigIo("histórico de terminais indisponível".into()))
+}
+
+#[tauri::command(async)]
+pub fn transcript_list(manager: State<'_, PtyManager>) -> Result<Vec<TranscriptMeta>> {
+    Ok(transcritos(&manager)?.list())
+}
+
+/// Devolve a cauda da gravação em base64 — bytes crus do PTY, com as
+/// sequências ANSI intactas, para o front reescrever num xterm e ver a tela
+/// como ela estava, e não um texto sem cor nem formatação.
+#[tauri::command(async)]
+pub fn transcript_read(
+    manager: State<'_, PtyManager>,
+    id: String,
+    max_bytes: Option<u64>,
+) -> Result<TranscriptData> {
+    let (bytes, total, truncated) = transcritos(&manager)?.read(&id, max_bytes)?;
+    Ok(TranscriptData {
+        b64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+        total_bytes: total,
+        truncated,
+    })
+}
+
+#[tauri::command(async)]
+pub fn transcript_delete(manager: State<'_, PtyManager>, id: String) -> Result<()> {
+    transcritos(&manager)?.delete(&id)
+}
+
+#[tauri::command(async)]
+pub fn transcript_clear(manager: State<'_, PtyManager>) -> Result<()> {
+    transcritos(&manager)?.clear()
 }
 
 #[tauri::command(async)]
@@ -283,17 +327,78 @@ pub async fn ai_models(
 
 /* --------------------------- uso do Claude Code --------------------------- */
 
+/// `config_dir` ausente = a configuração principal (`~/.claude`). Com contas,
+/// o front manda a pasta da conta que ele quer inspecionar.
 #[tauri::command(async)]
-pub fn claude_usage_summary() -> crate::claude_usage::UsageSummary {
-    crate::claude_usage::summarize_usage()
+pub fn claude_usage_summary(config_dir: Option<String>) -> crate::claude_usage::UsageSummary {
+    crate::claude_usage::summarize_usage(config_dir.as_deref())
+}
+
+/// Uma varredura por conta, numa chamada só — o painel mostra as contas lado
+/// a lado, e um `invoke` por conta faria as colunas aparecerem em tempos
+/// diferentes.
+#[tauri::command(async)]
+pub fn claude_usage_by_account(
+    accounts: Vec<(String, String)>,
+) -> Vec<crate::claude_usage::AccountUsage> {
+    crate::claude_usage::summarize_accounts(&accounts)
 }
 
 #[tauri::command(async)]
-pub fn claude_settings_get() -> crate::claude_usage::ClaudeSettings {
-    crate::claude_usage::read_settings()
+pub fn claude_settings_get(config_dir: Option<String>) -> crate::claude_usage::ClaudeSettings {
+    crate::claude_usage::read_settings(config_dir.as_deref())
 }
 
 #[tauri::command(async)]
-pub fn claude_settings_set(model: Option<String>, effort_level: Option<String>) -> Result<()> {
-    crate::claude_usage::write_settings(model, effort_level)
+pub fn claude_settings_set(
+    config_dir: Option<String>,
+    model: Option<String>,
+    effort_level: Option<String>,
+) -> Result<()> {
+    crate::claude_usage::write_settings(config_dir.as_deref(), model, effort_level)
+}
+
+/* ------------------------- contas do Claude Code ------------------------- */
+
+/// Cria (ou confirma) a pasta da conta e devolve o caminho que vai virar
+/// `CLAUDE_CONFIG_DIR` nos terminais dela.
+#[tauri::command(async)]
+pub fn claude_account_prepare(id: String, seed: bool) -> Result<String> {
+    crate::claude_accounts::prepare(&id, seed)
+}
+
+/// Estado de várias contas de uma vez: existe? logada? qual plano? Nenhum
+/// token atravessa o IPC — ver `claude_accounts`.
+#[tauri::command(async)]
+pub fn claude_accounts_status(ids: Vec<String>) -> Vec<crate::claude_accounts::AccountStatus> {
+    ids.iter()
+        .filter_map(|id| crate::claude_accounts::status(id).ok())
+        .collect()
+}
+
+/// Copia para a conta o login que já existe em `~/.claude`.
+#[tauri::command(async)]
+pub fn claude_account_import(id: String) -> Result<()> {
+    crate::claude_accounts::import_credentials(&id)
+}
+
+/// Sai da conta sem apagar preferências nem histórico.
+#[tauri::command(async)]
+pub fn claude_account_logout(id: String) -> Result<()> {
+    crate::claude_accounts::logout(&id)
+}
+
+/// Apaga a pasta inteira da conta.
+#[tauri::command(async)]
+pub fn claude_account_forget(id: String) -> Result<()> {
+    crate::claude_accounts::forget(&id)
+}
+
+/// `true` quando existe um login em `~/.claude` — é o que permite à interface
+/// oferecer "importar a conta que você já usa" só quando isso faz sentido.
+#[tauri::command(async)]
+pub fn claude_default_login_exists() -> bool {
+    crate::claude_accounts::default_claude_dir()
+        .map(|d| d.join(".credentials.json").is_file())
+        .unwrap_or(false)
 }

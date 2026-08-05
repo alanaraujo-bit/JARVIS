@@ -28,6 +28,7 @@ export type IconName =
   | "agent"
   | "user"
   | "close"
+  | "minimize"
   | "plus"
   | "search"
   | "chevron-down"
@@ -131,6 +132,9 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   close: <path d="M6.2 6.2 17.8 17.8M17.8 6.2 6.2 17.8" />,
+  /* Traço só embaixo: a mesma convenção do botão de minimizar de qualquer
+     janela, e inconfundível com o "menos" de remover, que fica no meio. */
+  minimize: <path d="M6 17.4h12" />,
   plus: <path d="M12 5.2v13.6M5.2 12h13.6" />,
   search: (
     <>

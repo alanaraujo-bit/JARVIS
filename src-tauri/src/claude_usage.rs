@@ -15,8 +15,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{JarvisError, Result};
 
-fn claude_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".claude"))
+/// Diretório de configuração a inspecionar.
+///
+/// `None` significa a configuração principal (`~/.claude`), que é a conta de
+/// quem nunca criou conta nenhuma no JARVIS. Com contas, cada uma tem a sua
+/// pasta e o mesmo código serve às duas situações — o formato dos arquivos
+/// que a CLI escreve é idêntico, mude o diretório que mudar.
+fn claude_dir(config_dir: Option<&str>) -> Option<PathBuf> {
+    match config_dir {
+        Some(d) if !d.trim().is_empty() => Some(PathBuf::from(d)),
+        _ => dirs::home_dir().map(|h| h.join(".claude")),
+    }
 }
 
 /* ------------------------------ settings.json ---------------------------- */
@@ -33,8 +42,8 @@ pub struct ClaudeSettings {
     pub effort_level: Option<String>,
 }
 
-pub fn read_settings() -> ClaudeSettings {
-    let Some(dir) = claude_dir() else {
+pub fn read_settings(config_dir: Option<&str>) -> ClaudeSettings {
+    let Some(dir) = claude_dir(config_dir) else {
         return ClaudeSettings::default();
     };
     let Ok(content) = fs::read_to_string(dir.join("settings.json")) else {
@@ -47,8 +56,13 @@ pub fn read_settings() -> ClaudeSettings {
 /// apagar as outras chaves que a própria CLI usa (tema, flags, etc.) — ler o
 /// arquivo inteiro como `ClaudeSettings` e regravar perderia tudo que não
 /// está tipado aqui.
-pub fn write_settings(model: Option<String>, effort_level: Option<String>) -> Result<()> {
-    let dir = claude_dir().ok_or_else(|| JarvisError::ConfigIo("sem diretório home".into()))?;
+pub fn write_settings(
+    config_dir: Option<&str>,
+    model: Option<String>,
+    effort_level: Option<String>,
+) -> Result<()> {
+    let dir =
+        claude_dir(config_dir).ok_or_else(|| JarvisError::ConfigIo("sem diretório home".into()))?;
     fs::create_dir_all(&dir).map_err(|e| JarvisError::ConfigIo(e.to_string()))?;
     let path = dir.join("settings.json");
 
@@ -137,15 +151,15 @@ fn custo_usd(model: &str, input: u64, output: u64, cache_write: u64, cache_read:
 /// (formato "JSON Lines"); linhas que não parseiam ou não têm `usage` são
 /// puladas silenciosamente — o arquivo é escrito por outro processo (a CLI)
 /// e pode estar sendo gravado no exato momento da leitura.
-pub fn summarize_usage() -> UsageSummary {
-    let settings = read_settings();
+pub fn summarize_usage(config_dir: Option<&str>) -> UsageSummary {
+    let settings = read_settings(config_dir);
     let mut resumo = UsageSummary {
         current_model: settings.model,
         current_effort: settings.effort_level,
         ..Default::default()
     };
 
-    let Some(projects_dir) = claude_dir().map(|d| d.join("projects")) else {
+    let Some(projects_dir) = claude_dir(config_dir).map(|d| d.join("projects")) else {
         resumo.no_data = true;
         return resumo;
     };
@@ -255,6 +269,30 @@ pub fn summarize_usage() -> UsageSummary {
     resumo.by_model = por_modelo.into_values().collect();
     resumo.by_model.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
     resumo
+}
+
+/// Uso de uma conta, para o painel poder pôr as três lado a lado.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountUsage {
+    pub account_id: String,
+    pub summary: UsageSummary,
+}
+
+/// Resume várias contas de uma vez.
+///
+/// Sequencial e não paralelo: são poucas contas, e a varredura é dominada
+/// por I/O de arquivos pequenos no mesmo disco — threads aqui competiriam
+/// pelo mesmo recurso para ganhar milissegundos. O comando que chama isto já
+/// é `async`, então a janela não trava enquanto roda.
+pub fn summarize_accounts(contas: &[(String, String)]) -> Vec<AccountUsage> {
+    contas
+        .iter()
+        .map(|(id, dir)| AccountUsage {
+            account_id: id.clone(),
+            summary: summarize_usage(Some(dir)),
+        })
+        .collect()
 }
 
 fn campo_u64(v: &serde_json::Value, campo: &str) -> u64 {

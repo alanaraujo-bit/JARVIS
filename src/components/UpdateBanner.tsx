@@ -7,55 +7,31 @@
  * recalcula colunas quando o container muda de tamanho, e um TUI aberto
  * (vim, htop) se embaralha com isso. Sobrepor não custa nada a quem está
  * trabalhando.
+ *
+ * É a versão resumida do `UpdatePanel`: o que ele mostra em detalhe (notas,
+ * versão instalada, tamanho baixado), aqui vira uma linha e dois botões.
+ * Todo o estado vem do `updateStore`, então os dois nunca se contradizem.
  */
 
-import { useEffect, useState } from "react";
-
 import { Icon } from "./Icon";
-import { checkForUpdate, relaunchApp, type UpdateInfo } from "../lib/updater";
-
-type Fase = "oculto" | "oferecendo" | "baixando" | "pronto" | "falhou";
+import { useUpdateStore } from "../stores/updateStore";
+import { pctBaixado } from "../lib/updateRules";
+import { formatBytes } from "../lib/stats";
 
 export function UpdateBanner() {
-  const [update, setUpdate] = useState<UpdateInfo | null>(null);
-  const [fase, setFase] = useState<Fase>("oculto");
-  const [pct, setPct] = useState<number | null>(null);
+  const fase = useUpdateStore((s) => s.fase);
+  const update = useUpdateStore((s) => s.update);
+  const visivel = useUpdateStore((s) => s.avisoVisivel);
+  const baixado = useUpdateStore((s) => s.baixado);
+  const total = useUpdateStore((s) => s.total);
+  const instalar = useUpdateStore((s) => s.instalar);
+  const dispensar = useUpdateStore((s) => s.dispensarAviso);
+  const abrirPainel = useUpdateStore((s) => s.abrirPainel);
 
-  useEffect(() => {
-    let vivo = true;
-    // Um atraso curto tira a checagem do caminho crítico da abertura: o
-    // primeiro terminal aparece antes de qualquer coisa tocar a rede.
-    const t = setTimeout(() => {
-      void checkForUpdate().then((u) => {
-        if (!vivo || !u) return;
-        setUpdate(u);
-        setFase("oferecendo");
-      });
-    }, 3000);
-    return () => {
-      vivo = false;
-      clearTimeout(t);
-    };
-  }, []);
+  if (!visivel) return null;
 
-  if (fase === "oculto" || !update) return null;
-
-  async function instala() {
-    if (!update) return;
-    setFase("baixando");
-    setPct(null);
-    try {
-      await update.install((baixado, total) => {
-        // Sem `content-length` não dá para mostrar porcentagem honesta; a
-        // barra vira indeterminada em vez de inventar um número.
-        setPct(total ? Math.min(100, Math.round((baixado / total) * 100)) : null);
-      });
-      setFase("pronto");
-      await relaunchApp();
-    } catch {
-      setFase("falhou");
-    }
-  }
+  const pct = pctBaixado(baixado, total);
+  const mostraAcoes = fase === "disponivel" || fase === "erro";
 
   return (
     <div className="update-banner" role="status" aria-live="polite">
@@ -64,7 +40,7 @@ export function UpdateBanner() {
       </span>
 
       <div className="update-banner-text">
-        {fase === "oferecendo" && (
+        {fase === "disponivel" && update && (
           <>
             <strong>Versão {update.version} disponível</strong>
             <span>Você está na {update.currentVersion}.</span>
@@ -72,8 +48,14 @@ export function UpdateBanner() {
         )}
         {fase === "baixando" && (
           <>
-            <strong>Baixando a {update.version}…</strong>
-            <span>{pct === null ? "Preparando" : `${pct}%`}</span>
+            <strong>Baixando a {update?.version}…</strong>
+            <span>
+              {pct === null
+                ? baixado > 0
+                  ? `${formatBytes(baixado)} baixados`
+                  : "Preparando"
+                : `${formatBytes(baixado)} de ${formatBytes(total ?? 0)} · ${pct}%`}
+            </span>
           </>
         )}
         {fase === "pronto" && (
@@ -82,10 +64,10 @@ export function UpdateBanner() {
             <span>Reiniciando o JARVIS…</span>
           </>
         )}
-        {fase === "falhou" && (
+        {fase === "erro" && (
           <>
             <strong>Não consegui atualizar</strong>
-            <span>Tente de novo mais tarde ou baixe do site.</span>
+            <span>Abra os detalhes para ver o motivo.</span>
           </>
         )}
       </div>
@@ -96,15 +78,23 @@ export function UpdateBanner() {
         </div>
       )}
 
-      {(fase === "oferecendo" || fase === "falhou") && (
+      {mostraAcoes && (
         <>
-          <button className="chip update-banner-cta" onClick={() => void instala()}>
-            <Icon name="refresh" size={13} />
-            {fase === "falhou" ? "Tentar de novo" : "Atualizar"}
+          {fase === "disponivel" && (
+            <button className="chip update-banner-cta" onClick={() => void instalar()}>
+              <Icon name="refresh" size={13} />
+              Atualizar
+            </button>
+          )}
+          <button
+            className={`chip subtle ${fase === "erro" ? "update-banner-cta" : ""}`}
+            onClick={abrirPainel}
+          >
+            Detalhes
           </button>
           <button
             className="topbar-btn"
-            onClick={() => setFase("oculto")}
+            onClick={dispensar}
             title="Agora não"
             aria-label="Dispensar aviso de atualização"
           >

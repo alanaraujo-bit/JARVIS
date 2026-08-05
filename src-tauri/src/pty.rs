@@ -11,6 +11,7 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize};
 use crate::error::{JarvisError, Result};
 use crate::job::Job;
 use crate::protocol::{ExitEvent, SessionInfo, Snapshot, SpawnOptions};
+use crate::transcript::{TranscriptMeta, TranscriptStore, TranscriptWriter};
 
 /// Saida do motor de PTY. O `PtyManager` nao conhece Tauri: quem entrega os
 /// eventos e injetado. Isso mantem o nucleo testavel sem abrir uma janela.
@@ -331,6 +332,10 @@ pub struct PtyManager {
     pending: Arc<(Mutex<Pending>, Condvar)>,
     sink: Arc<dyn EventSink>,
     stopping: Arc<AtomicBool>,
+    /// Gravação em disco da saída, para o conteúdo do terminal sobreviver ao
+    /// fechamento da aba e do app. Opcional: o motor funciona igual sem ela,
+    /// e os testes não precisam tocar no disco do usuário.
+    transcript: Option<Arc<TranscriptStore>>,
 }
 
 impl PtyManager {
@@ -340,7 +345,13 @@ impl PtyManager {
             pending: Arc::new((Mutex::new(Pending::default()), Condvar::new())),
             sink,
             stopping: Arc::new(AtomicBool::new(false)),
+            transcript: None,
         }
+    }
+
+    pub fn with_transcript(mut self, store: Arc<TranscriptStore>) -> Self {
+        self.transcript = Some(store);
+        self
     }
 
     /// Sobe a thread que agrupa a saida dos PTYs e a entrega ao front.
@@ -487,6 +498,28 @@ impl PtyManager {
 
         self.sessions.lock().insert(id.clone(), Arc::clone(&session));
 
+        // A gravação nasce junto com a sessão, e não na primeira escrita: o
+        // banner do shell e o comando de auto-início são justamente o começo
+        // da conversa que se quer poder reler depois.
+        let gravacao = self.transcript.as_ref().and_then(|t| {
+            t.begin(TranscriptMeta {
+                id: id.clone(),
+                title: info.title.clone(),
+                program: info.program.clone(),
+                args: info.args.clone(),
+                cwd: info.cwd.clone(),
+                profile_id: info.profile_id.clone(),
+                workspace_id: opts.workspace_id.clone(),
+                workspace_name: opts.workspace_name.clone(),
+                auto_command: opts.initial_command.clone(),
+                started_at: info.started_at,
+                ended_at: None,
+                exit_code: None,
+                truncated: false,
+                bytes: 0,
+            })
+        });
+
         let (reader_done_tx, reader_done_rx) = mpsc::channel::<()>();
         self.start_reader(
             id.clone(),
@@ -494,6 +527,7 @@ impl PtyManager {
             reader,
             reader_done_tx,
             opts.initial_command.clone(),
+            gravacao,
         )?;
         self.start_waiter(id.clone(), session, child, reader_done_rx)?;
 
@@ -507,6 +541,7 @@ impl PtyManager {
         mut reader: Box<dyn Read + Send>,
         done: mpsc::Sender<()>,
         initial_command: Option<String>,
+        mut gravacao: Option<TranscriptWriter>,
     ) -> Result<()> {
         let pending = Arc::clone(&self.pending);
         std::thread::Builder::new()
@@ -517,11 +552,17 @@ impl PtyManager {
                 let mut command_sent = false;
                 let (lock, cvar) = &*pending;
 
-                let publish = |chunk: &[u8]| {
+                // Esta thread é a única produtora dos bytes da sessão, então a
+                // gravação em disco acontece aqui dentro sem lock nenhum novo
+                // no caminho quente.
+                let mut publish = |chunk: &[u8]| {
                     if chunk.is_empty() {
                         return;
                     }
                     session.bytes_out.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+                    if let Some(g) = gravacao.as_mut() {
+                        g.write(chunk);
+                    }
                     let seq = session.scrollback.lock().push(chunk);
                     lock.lock().push(&id, chunk, seq);
                     cvar.notify_one();
@@ -572,6 +613,7 @@ impl PtyManager {
     ) -> Result<()> {
         let sink = Arc::clone(&self.sink);
         let pending = Arc::clone(&self.pending);
+        let transcript = self.transcript.clone();
         std::thread::Builder::new()
             .name(format!("jarvis-pty-wait-{}", &id[..8]))
             .spawn(move || {
@@ -592,6 +634,10 @@ impl PtyManager {
                         break;
                     }
                     std::thread::sleep(FLUSH_INTERVAL);
+                }
+
+                if let Some(t) = transcript.as_ref() {
+                    t.finish(&id, Some(code));
                 }
 
                 sink.exit(ExitEvent {
@@ -686,11 +732,22 @@ impl PtyManager {
             let _ = s.killer.lock().kill();
             s.close_channels();
         }
+        // Fechar a aba encerra a gravação. O conteúdo continua no disco: é
+        // exatamente o caso que motivou tudo isto — sair de uma conversa com
+        // um agente e não perder o que foi dito.
+        if let Some(t) = self.transcript.as_ref() {
+            t.finish(id, None);
+        }
         let mut p = self.pending.0.lock();
         if let Some(slot) = p.queue.remove(id) {
             p.total = p.total.saturating_sub(slot.bytes.len());
         }
         Ok(())
+    }
+
+    /// Acesso ao histórico gravado, para os comandos que o front chama.
+    pub fn transcripts(&self) -> Option<&Arc<TranscriptStore>> {
+        self.transcript.as_ref()
     }
 
     pub fn snapshot(&self, id: &str) -> Result<Snapshot> {
@@ -735,6 +792,13 @@ impl PtyManager {
             }
             let _ = s.killer.lock().kill();
             s.close_channels();
+        }
+        // Fechar os canais dá EOF às threads de leitura, que então soltam
+        // seus `TranscriptWriter` e fazem o flush final. O que falta é marcar
+        // as entradas como encerradas, senão a próxima abertura as trataria
+        // como restos de uma queda.
+        if let Some(t) = self.transcript.as_ref() {
+            t.finish_all();
         }
     }
 }

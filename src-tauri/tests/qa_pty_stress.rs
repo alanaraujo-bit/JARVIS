@@ -79,6 +79,8 @@ fn opts(program: &str, args: &[&str]) -> SpawnOptions {
         title: None,
         profile_id: None,
         initial_command: None,
+        workspace_id: None,
+        workspace_name: None,
     }
 }
 
