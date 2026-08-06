@@ -16,6 +16,8 @@ import {
   ptyWrite,
   ptyWriteBinary,
 } from "../lib/ipc";
+import { readClipboardText, writeClipboardText } from "../lib/clipboard";
+import { diffTexto } from "../lib/dictation";
 import { registerTerminal, unregisterTerminal } from "../lib/terminalRegistry";
 import { theme } from "../lib/theme";
 import { Icon } from "./Icon";
@@ -53,6 +55,20 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
   const [viewId] = useState(makeViewId);
   const searchRef = useRef<SearchAddon | null>(null);
   const [busca, setBusca] = useState<string | null>(null);
+  // Barra de ditado: um campo de texto de verdade para a ferramenta de
+  // transcrição digitar, porque canvas não é alvo que ela reconheça.
+  // `dictadoAnteriorRef` guarda o valor anterior do campo para o diff
+  // mandar para o shell só o que mudou.
+  const [dictando, setDictando] = useState(false);
+  const [dictado, setDictado] = useState("");
+  const dictadoAnteriorRef = useRef("");
+
+  const fechaDitado = () => {
+    dictadoAnteriorRef.current = "";
+    setDictado("");
+    setDictando(false);
+    termRef.current?.focus();
+  };
   // O handler de teclado do xterm é registrado uma vez só, no efeito de
   // montagem; guardar o callback numa ref evita ter que recriar o terminal
   // inteiro para trocá-lo.
@@ -206,46 +222,90 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
 
     /* --------------------- copiar, colar e buscar --------------------- */
 
-    // Sem uma política explícita, o comportamento é o que o WebView der de
-    // brinde — e o padrão do Chromium faz Ctrl+C copiar quando há seleção,
-    // o que rouba o único jeito de interromper um processo travado.
+    // Política explícita, no estilo do Windows Terminal:
+    //
+    // - Ctrl+C / Ctrl+Shift+C com seleção copiam (e limpam a seleção); sem
+    //   seleção, o Ctrl+C puro segue sendo o SIGINT de sempre. Copiar com
+    //   seleção ativa é o comportamento que o usuário espera no Windows;
+    //   para interromper depois de selecionar, é só pressionar Ctrl+C de
+    //   novo — o primeiro copia, o segundo interrompe.
+    // - Ctrl+V / Ctrl+Shift+V / Shift+Insert colam. O Shift+Insert é o
+    //   atalho que as ferramentas de ditado (Wispr Flow etc.) usam para
+    //   colar em terminais no Windows — sem ele, o texto transcrito nunca
+    //   chegava ao shell.
+    // - Ctrl+Shift+G abre/fecha a barra de ditado (o D já pertence ao
+    //   "dividir ao lado" do app).
+    //
+    // O clipboard é lido/escrito pelo plugin oficial do Tauri: o
+    // `navigator.clipboard` do WebView2 falha em silêncio, e era isso que
+    // deixava o copiar/colar "quase funcionando".
+    const colar = () => {
+      void readClipboardText().then((texto) => {
+        // A leitura é assíncrona: se o painel fechou enquanto o clipboard era
+        // lido, o terminal já está descartado — pastar nele seria operar um
+        // xterm morto.
+        if (disposed || !texto) return;
+        term.paste(texto);
+      });
+    };
+
+    const copiarSelecao = () => {
+      const selecao = term.getSelection();
+      if (!selecao) return;
+      void writeClipboardText(selecao);
+      term.clearSelection();
+    };
+
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
       const ctrl = e.ctrlKey || e.metaKey;
-      if (!ctrl) return true;
+      const tecla = e.key.toLowerCase();
 
-      // Ctrl+Shift+C / Ctrl+Shift+V: convenção de terminal no Windows e no
-      // Linux, e não colide com nada que o shell reivindique.
-      if (e.shiftKey && e.key.toLowerCase() === "c") {
-        const selecao = term.getSelection();
-        if (selecao) void navigator.clipboard.writeText(selecao).catch(() => {});
-        return false;
-      }
-      if (e.shiftKey && e.key.toLowerCase() === "v") {
-        void navigator.clipboard
-          .readText()
-          .then((texto) => {
-            if (texto) void ptyWrite(sessionId, texto);
-          })
-          .catch(() => {});
+      if (ctrl && e.shiftKey && !e.altKey && tecla === "g") {
+        setDictando((aberto) => !aberto);
         return false;
       }
 
-      // Ctrl+C com seleção: limpa a seleção e deixa o SIGINT passar. Copiar
-      // aqui deixaria o usuário sem forma de matar um processo travado logo
-      // depois de ter selecionado algo para ler.
-      if (!e.shiftKey && e.key.toLowerCase() === "c" && term.hasSelection()) {
-        term.clearSelection();
-        return true;
+      // Colar: Ctrl+V, Ctrl+Shift+V e Shift+Insert. `preventDefault` bloqueia
+      // a ação nativa do navegador — senão ela dispararia também um evento
+      // `paste` e o texto entraria duas vezes.
+      if ((ctrl && tecla === "v") || (e.shiftKey && e.key === "Insert")) {
+        e.preventDefault();
+        colar();
+        return false;
       }
 
-      if (!e.shiftKey && e.key.toLowerCase() === "f") {
+      if (ctrl && tecla === "c") {
+        if (term.hasSelection()) {
+          copiarSelecao();
+          return false;
+        }
+        // Ctrl+Shift+C sem seleção não é o SIGINT (que é o Ctrl+C puro);
+        // sem o que copiar, a combinação é consumida e não vira ETX.
+        return e.shiftKey ? false : true;
+      }
+
+      if (ctrl && !e.shiftKey && tecla === "f") {
         setBusca((atual) => atual ?? "");
         onOpenSearchRef.current?.();
         return false;
       }
       return true;
     });
+
+    // Colagem que chega como evento nativo do navegador (o sistema entrega
+    // o clipboard ao elemento focado) também precisa ir para o shell. O
+    // ouvinte aqui em cima, na fase de captura, pega o texto antes do xterm
+    // e o repassa com `term.paste` — que respeita o modo de colagem com
+    // marcadores dos shells que o pedem (vim, nano, agentes de IA).
+    const onPasteHost = (e: ClipboardEvent) => {
+      const texto = e.clipboardData?.getData("text/plain");
+      if (!texto) return;
+      e.preventDefault();
+      e.stopPropagation();
+      term.paste(texto);
+    };
+    host.addEventListener("paste", onPasteHost, true);
 
     // Alguns modos de reporte de mouse saem por `onBinary`, não por `onData`;
     // sem isso, a entrada de mouse de certos TUIs simplesmente some.
@@ -263,6 +323,7 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
       ro.disconnect();
       dataSub.dispose();
       binarySub.dispose();
+      host.removeEventListener("paste", onPasteHost, true);
       unlisten?.();
       searchRef.current = null;
       unregisterTerminal(sessionId, term);
@@ -284,10 +345,12 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
     };
   }, [sessionId]);
 
-  // Foco é um efeito separado justamente para não recriar o terminal.
+  // Foco é um efeito separado justamente para não recriar o terminal. Com a
+  // barra de ditado aberta o foco é dela — reconquistar o foco do terminal
+  // aqui roubaria da ferramenta de transcrição o campo onde ela digita.
   useEffect(() => {
-    if (focused) termRef.current?.focus();
-  }, [focused]);
+    if (focused && !dictando) termRef.current?.focus();
+  }, [focused, dictando]);
 
   return (
     <div className="term-wrap">
@@ -310,6 +373,63 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
           }}
         />
       )}
+      {dictando && (
+        <div className="term-dictation">
+          <Icon name="mic" size={15} title="Ditado ativo" />
+          <textarea
+            className="term-dictation-textarea"
+            autoFocus
+            rows={1}
+            placeholder="Fale ou cole — o texto vai digitando no shell…"
+            aria-label="Modo ditado: fale ou cole para digitar no terminal"
+            value={dictado}
+            onChange={(e) => {
+              const valor = e.target.value;
+              const delta = diffTexto(dictadoAnteriorRef.current, valor);
+              dictadoAnteriorRef.current = valor;
+              setDictado(valor);
+              if (delta) void ptyWrite(sessionId, delta).catch(() => {});
+            }}
+            onKeyDown={(e) => {
+              // Não deixa a tecla vazar para o terminal por baixo.
+              e.stopPropagation();
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void ptyWrite(sessionId, "\r").catch(() => {});
+                dictadoAnteriorRef.current = "";
+                setDictado("");
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                fechaDitado();
+              }
+            }}
+          />
+          <span className="term-dictation-hint">Enter envia · Esc fecha</span>
+          <button
+            className="term-dictation-close"
+            onClick={fechaDitado}
+            title="Fechar (Esc)"
+            aria-label="Fechar modo ditado"
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      )}
+      <button
+        className={`term-dictation-toggle${dictando ? " active" : ""}`}
+        onClick={() => {
+          if (dictando) fechaDitado();
+          else setDictando(true);
+        }}
+        title={
+          dictando
+            ? "Fechar modo ditado (Ctrl+Shift+G)"
+            : "Modo ditado: campo de texto de verdade para a transcrição de voz (Ctrl+Shift+G)"
+        }
+        aria-label={dictando ? "Fechar modo ditado" : "Abrir modo ditado"}
+      >
+        <Icon name="mic" size={16} />
+      </button>
     </div>
   );
 }

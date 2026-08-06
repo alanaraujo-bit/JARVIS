@@ -25,6 +25,12 @@ pub fn run() {
     // O `process` existe para o reinício depois de instalar a atualização;
     // sem ele o app fecharia e a pessoa teria que reabrir na mão.
     builder = builder.plugin(tauri_plugin_process::init());
+    // O `clipboard-manager` existe para o copiar/colar do terminal: o
+    // `navigator.clipboard` do WebView2 falha silenciosamente (a leitura
+    // exige permissão que o Tauri não concede por padrão), e sem um jeito
+    // confiável de ler o clipboard não há colar para as ferramentas de
+    // ditado que simulam Ctrl+V.
+    builder = builder.plugin(tauri_plugin_clipboard_manager::init());
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());

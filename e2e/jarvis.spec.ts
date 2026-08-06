@@ -364,6 +364,48 @@ test("a busca no histórico abre com Ctrl+F e fecha com Esc", async ({ page }) =
   await expect(busca).toBeHidden();
 });
 
+test("colar com Ctrl+V traz o clipboard para o shell", async ({ page }) => {
+  await page.getByRole("button", { name: /PowerShell 7/ }).click();
+  await esperaNoTerminal(page, "backend simulado");
+
+  // O mock do plugin de clipboard tenta a API real do navegador primeiro;
+  // com a permissão concedida, o texto escrito aqui é o que o Ctrl+V lê.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.evaluate(() => navigator.clipboard.writeText("git status"));
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("git status");
+
+  await page.locator(".pane:not([hidden]) .xterm-helper-textarea").first().focus();
+  await page.keyboard.press("Control+v");
+
+  await esperaNoTerminal(page, "git status");
+});
+
+test("a barra de ditado digita no shell como se fosse o usuário", async ({ page }) => {
+  await page.getByRole("button", { name: /PowerShell 7/ }).click();
+  await esperaNoTerminal(page, "backend simulado");
+
+  // Ctrl+Shift+G é atalho local do painel (o xterm o entrega ao próprio
+  // terminal), então o foco precisa estar no terminal antes.
+  await page.locator(".pane:not([hidden]) .xterm-helper-textarea").first().focus();
+  await page.keyboard.press("Control+Shift+G");
+  const barra = page.locator(".term-dictation-textarea");
+  await expect(barra).toBeVisible();
+
+  // O que entra na barra vai repassado ao shell em tempo real.
+  await barra.fill("echo ditado funcionou");
+  await esperaNoTerminal(page, "ditado funcionou");
+
+  // Enter executa a linha; a barra limpa e continua aberta para a próxima
+  // fala, em vez de fechar no meio da conversa.
+  await page.keyboard.press("Enter");
+  await expect(barra).toHaveValue("");
+  await expect(barra).toBeVisible();
+
+  // Esc fecha e devolve o foco ao terminal.
+  await page.keyboard.press("Escape");
+  await expect(barra).toBeHidden();
+});
+
 test("remover um workspace pede confirmação antes", async ({ page }) => {
   await page.keyboard.press("Control+Shift+B");
   await page.locator(".ws-add-btn").click();

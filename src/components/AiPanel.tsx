@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { writeClipboardText } from "../lib/clipboard";
 import { useAiStore } from "../stores/aiStore";
 import { AiSettings } from "./AiSettings";
 import { Icon } from "./Icon";
@@ -232,10 +233,11 @@ function MessageContent({ content, streaming, onRunCommand }: MessageContentProp
                 <div className="ai-code-actions">
                   <button
                     className="ai-code-btn"
-                    // Sem `.catch`, uma permissão de clipboard negada pelo
-                    // navegador virava exceção não tratada — sem aviso
-                    // nenhum ao usuário de que a cópia falhou.
-                    onClick={() => void navigator.clipboard.writeText(code).catch(() => {})}
+                    // O helper usa o plugin oficial do Tauri (e o
+                    // `navigator.clipboard` como último recurso), então a
+                    // cópia funciona mesmo onde a permissão do webview
+                    // negaria a API do navegador.
+                    onClick={() => void writeClipboardText(code)}
                     title="Copiar"
                     aria-label="Copiar código"
                   >

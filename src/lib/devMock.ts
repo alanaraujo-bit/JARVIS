@@ -101,6 +101,29 @@ export function installDevMock(): void {
     Math.max(0, ...[...sessions.keys()].map((k) => Number(k.split("-")[1]) || 0)) + 1;
   let proximoCallback = 1;
 
+  // O plugin de clipboard é uma ponte para o Rust; aqui o estado mora em
+  // memória, com a API real do navegador como primeira tentativa (os testes
+  // e2e concedem permissão de clipboard ao contexto e assim o fluxo inteiro
+  // é exercitado de verdade).
+  let clipboardMock = "";
+  const leClipboard = async (): Promise<string> => {
+    try {
+      const txt = await navigator.clipboard.readText();
+      if (txt) return txt;
+    } catch {
+      // sem permissão no navegador: cai no mock
+    }
+    return clipboardMock;
+  };
+  const gravaClipboard = async (texto: string) => {
+    clipboardMock = texto;
+    try {
+      await navigator.clipboard.writeText(texto);
+    } catch {
+      // o mock em memória já basta
+    }
+  };
+
   // A configuração vive em memória e sobrevive ao F5 via localStorage, para
   // o comportamento de persistência poder ser exercitado no navegador.
   const CONFIG_KEY = "jarvis-dev-config";
@@ -521,6 +544,23 @@ export function installDevMock(): void {
         }
         emite(`ai:chunk:${requestId}`, { requestId, text: pedacos[i++] });
       }, 25);
+      return null;
+    },
+
+    /* ------------------- plugin de clipboard -------------------------- */
+    // Espelha os comandos do `tauri-plugin-clipboard-manager`, que o front
+    // usa para o copiar/colar do terminal.
+
+    "plugin:clipboard-manager|read_text": async () => await leClipboard(),
+
+    "plugin:clipboard-manager|write_text": async (args) => {
+      const { text } = args as unknown as { text?: string };
+      await gravaClipboard(text ?? "");
+      return null;
+    },
+
+    "plugin:clipboard-manager|clear": async () => {
+      await gravaClipboard("");
       return null;
     },
 

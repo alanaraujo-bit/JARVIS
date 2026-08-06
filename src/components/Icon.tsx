@@ -53,6 +53,7 @@ export type IconName =
   | "coins"
   | "pencil"
   | "history"
+  | "mic"
   | "pwsh"
   | "cmd"
   | "bash"
@@ -230,6 +231,15 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M3.6 12a8.4 8.4 0 1 0 2.6-6.1" />
       <path d="M3.4 4.2v4.2h4.2" />
       <path d="M12 7.8V12l3 1.8" />
+    </>
+  ),
+  /* Microfone da barra de ditado: cápsula com suporte, o desenho que o
+     teclado de qualquer celular usa para o áudio — reconhecível sem texto. */
+  mic: (
+    <>
+      <rect x="9" y="3.4" width="6" height="11" rx="3" />
+      <path d="M5.6 11.4a6.4 6.4 0 0 0 12.8 0" />
+      <path d="M12 17.8v3.2M8.6 21h6.8" />
     </>
   ),
 
