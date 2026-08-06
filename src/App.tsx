@@ -9,6 +9,10 @@ import { HistoryPanel } from "./components/HistoryPanel";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { UpdatePanel } from "./components/UpdatePanel";
 import { AccountsPanel } from "./components/AccountsPanel";
+import { NavRail, type RailDest } from "./components/NavRail";
+import { Onboarding } from "./components/Onboarding";
+import { SettingsScreen } from "./components/SettingsScreen";
+import { ProfileScreen } from "./components/ProfileScreen";
 import type { Command as PaletteCommand } from "./lib/palette";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { useWorkspaceStore } from "./stores/workspaceStore";
@@ -115,6 +119,8 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   /**
    * Conta do Claude Code de cada sessão viva, para pintar o ponto da aba e
    * saber em que login um terminal está sem ter que perguntar a ele.
@@ -144,6 +150,8 @@ export default function App() {
   const startSystemWatch = useUiStore((s) => s.startSystemWatch);
   const density = useUiStore((s) => s.density);
   const setDensity = useUiStore((s) => s.setDensity);
+  const onboardingDone = useUiStore((s) => s.onboardingDone);
+  const setOnboardingDone = useUiStore((s) => s.setOnboardingDone);
 
   const contas = useAccountStore((s) => s.contas);
   const contaEscolhidaId = useAccountStore((s) => s.escolhidaId);
@@ -181,6 +189,74 @@ export default function App() {
     if (window.innerWidth <= ESTREITO && !aiPanelOpen) setSidebarOpen(false);
     toggleAiPanelRaw();
   }, [aiPanelOpen, setSidebarOpen, toggleAiPanelRaw]);
+
+  /**
+   * Fecha as telas de Configurações e Perfil. Separado porque elas se
+   * comportam como as outras sobreposições — só uma na tela por vez — e
+   * aparecem em todos os pontos de troca (menu, atalhos, paleta, Esc).
+   */
+  const fecharTelas = useCallback(() => {
+    setSettingsOpen(false);
+    setProfileOpen(false);
+  }, []);
+
+  /**
+   * Roteador do menu lateral: fecha o que estiver aberto e abre a rota
+   * pedida. Clicar na rota já ativa a fecha (comportamento de alternância,
+   * como o botão da barra lateral de workspaces) — e "Início" só fecha.
+   */
+  const selecionarRota = useCallback(
+    (dest: RailDest) => {
+      const eraAtiva =
+        (dest === "stats" && statsOpen) ||
+        (dest === "history" && historyOpen) ||
+        (dest === "accounts" && contasPainelAberto) ||
+        (dest === "settings" && settingsOpen) ||
+        (dest === "profile" && profileOpen);
+
+      if (!eraAtiva) {
+        setPaletteOpen(false);
+        setStatsOpen(false);
+        setHistoryOpen(false);
+        fecharPainelUpdate();
+        fecharPainelContas();
+        fecharTelas();
+      }
+
+      switch (dest) {
+        case "stats":
+          setStatsOpen(!eraAtiva);
+          break;
+        case "history":
+          setHistoryOpen(!eraAtiva);
+          break;
+        case "accounts":
+          // Alternância como as telas: clicar na conta já aberta a fecha.
+          if (eraAtiva) fecharPainelContas();
+          else abrirPainelContas();
+          break;
+        case "settings":
+          setSettingsOpen(!eraAtiva);
+          break;
+        case "profile":
+          setProfileOpen(!eraAtiva);
+          break;
+        default:
+          // "Início": o bloco acima já fechou tudo.
+          break;
+      }
+    },
+    [
+      statsOpen,
+      historyOpen,
+      contasPainelAberto,
+      settingsOpen,
+      profileOpen,
+      fecharPainelUpdate,
+      fecharPainelContas,
+      fecharTelas,
+    ],
+  );
 
   // Refs espelhando o estado mais recente para uso dentro de callbacks
   // estáveis (atalhos de teclado) sem precisar recriá-los a cada mudança.
@@ -240,7 +316,13 @@ export default function App() {
   useEffect(() => {
     const parar = startSystemWatch();
     void configLoad()
-      .then((cfg) => hydrateUi({ theme: cfg.ui?.theme, density: cfg.ui?.density }))
+      .then((cfg) =>
+        hydrateUi({
+          theme: cfg.ui?.theme,
+          density: cfg.ui?.density,
+          onboardingDone: cfg.ui?.onboardingDone,
+        }),
+      )
       .catch(() => {});
     return parar;
   }, [hydrateUi, startSystemWatch]);
@@ -940,16 +1022,19 @@ export default function App() {
       togglePalette: () => {
         setStatsOpen(false);
         setHistoryOpen(false);
+        fecharTelas();
         setPaletteOpen((v) => !v);
       },
       toggleStats: () => {
         setPaletteOpen(false);
         setHistoryOpen(false);
+        fecharTelas();
         setStatsOpen((v) => !v);
       },
       toggleHistory: () => {
         setPaletteOpen(false);
         setStatsOpen(false);
+        fecharTelas();
         setHistoryOpen((v) => !v);
       },
     }),
@@ -964,6 +1049,7 @@ export default function App() {
       toggleSidebar,
       toggleAiPanel,
       clearAiMessages,
+      fecharTelas,
     ],
   );
 
@@ -973,7 +1059,15 @@ export default function App() {
   // todo atalho exige Ctrl — e um Esc solto precisa chegar ao terminal
   // quando não há nada aberto por cima (é tecla de uso constante em TUIs).
   useEffect(() => {
-    if (!paletteOpen && !statsOpen && !historyOpen && !updatePainelAberto && !contasPainelAberto)
+    if (
+      !paletteOpen &&
+      !statsOpen &&
+      !historyOpen &&
+      !settingsOpen &&
+      !profileOpen &&
+      !updatePainelAberto &&
+      !contasPainelAberto
+    )
       return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -982,6 +1076,7 @@ export default function App() {
       setPaletteOpen(false);
       setStatsOpen(false);
       setHistoryOpen(false);
+      fecharTelas();
       fecharPainelUpdate();
       fecharPainelContas();
     };
@@ -991,8 +1086,11 @@ export default function App() {
     paletteOpen,
     statsOpen,
     historyOpen,
+    settingsOpen,
+    profileOpen,
     updatePainelAberto,
     contasPainelAberto,
+    fecharTelas,
     fecharPainelUpdate,
     fecharPainelContas,
   ]);
@@ -1139,6 +1237,7 @@ export default function App() {
           setPaletteOpen(false);
           setStatsOpen(false);
           setHistoryOpen(false);
+          fecharTelas();
           abrirPainelContas();
         },
       },
@@ -1152,6 +1251,7 @@ export default function App() {
           // backdrop de uma come os cliques da outra.
           setPaletteOpen(false);
           setStatsOpen(false);
+          fecharTelas();
           abrirPainelUpdate();
         },
       },
@@ -1164,6 +1264,7 @@ export default function App() {
         run: () => {
           setPaletteOpen(false);
           setStatsOpen(false);
+          fecharTelas();
           setHistoryOpen(true);
         },
       },
@@ -1173,7 +1274,38 @@ export default function App() {
         group: "Aplicativo",
         shortcut: "Ctrl+Shift+S",
         keywords: "dashboard numeros bytes",
-        run: () => setStatsOpen(true),
+        run: () => {
+          fecharTelas();
+          setStatsOpen(true);
+        },
+      },
+      {
+        id: "app.settings",
+        title: "Configurações",
+        group: "Aplicativo",
+        keywords: "opcoes preferencias tema densidade claude ia atualizacoes",
+        run: () => {
+          setPaletteOpen(false);
+          setStatsOpen(false);
+          setHistoryOpen(false);
+          fecharPainelContas();
+          setProfileOpen(false);
+          setSettingsOpen(true);
+        },
+      },
+      {
+        id: "app.profile",
+        title: "Perfil — sobre o JARVIS e esta máquina",
+        group: "Aplicativo",
+        keywords: "sobre versao sistema informacoes maquina app",
+        run: () => {
+          setPaletteOpen(false);
+          setStatsOpen(false);
+          setHistoryOpen(false);
+          fecharPainelContas();
+          setSettingsOpen(false);
+          setProfileOpen(true);
+        },
       },
       // Estes quatro só existiam como combinação de teclas: não apareciam em
       // tooltip nenhum, e a paleta — o único lugar onde os atalhos ficam
@@ -1326,6 +1458,7 @@ export default function App() {
     contaEscolhidaId,
     escolherConta,
     abrirPainelContas,
+    fecharTelas,
   ]);
 
   /* ------------------------------- render ------------------------------- */
@@ -1370,12 +1503,28 @@ export default function App() {
   const abasVisiveis = useMemo(() => filtraVisiveis(tabs), [tabs]);
   const abasMinimizadas = useMemo(() => filtraMinimizadas(tabs), [tabs]);
 
+  // Rota ativa do menu lateral, derivada do que está aberto. O menu nunca
+  // desmente as sobreposições porque é ele quem as abre — e a derivação
+  // garante que a marcação acompanhe até o que foi aberto por atalho.
+  const railDest: RailDest = settingsOpen
+    ? "settings"
+    : profileOpen
+      ? "profile"
+      : contasPainelAberto
+        ? "accounts"
+        : statsOpen
+          ? "stats"
+          : historyOpen
+            ? "history"
+            : "home";
+
   return (
     <div
       className={`app ${sidebarOpen ? "sidebar-open" : ""} ${aiPanelOpen ? "ai-open" : ""}`}
       style={activeWs ? { "--ws-color": activeWs.color } as React.CSSProperties : undefined}
     >
       <UpdateBanner />
+      <NavRail active={railDest} onSelect={selecionarRota} />
       <header className="topbar">
         <button
           className={`topbar-btn ${sidebarOpen ? "active" : ""}`}
@@ -1681,6 +1830,30 @@ export default function App() {
       />
       <UpdatePanel />
       <AccountsPanel onEntrar={(c) => void entrarNaConta(c)} />
+      <SettingsScreen
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onOpenContas={() => {
+          setSettingsOpen(false);
+          abrirPainelContas();
+        }}
+        onOpenAtualizacoes={() => {
+          setSettingsOpen(false);
+          abrirPainelUpdate();
+        }}
+        onReabrirIntroducao={() => {
+          setSettingsOpen(false);
+          setOnboardingDone(false);
+        }}
+      />
+      <ProfileScreen
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        home={home}
+        profiles={profiles}
+        sessions={listaSessoes}
+      />
+      {!onboardingDone && <Onboarding />}
     </div>
   );
 }

@@ -37,6 +37,7 @@ body {
 .app {
   display: grid;
   grid-template-rows: var(--topbar-h) var(--tabbar-h) 1fr;
+  grid-template-columns: var(--rail-w) 1fr;
   height: 100%;
 }
 
@@ -3365,4 +3366,684 @@ select {
 .tab .x.minimize:hover {
   color: var(--text);
   background: var(--surface-1);
+}
+
+/* =============================== menu lateral ============================ */
+
+/* Os quatro filhos em fluxo da grade precisam de posição explícita: com a
+   coluna do rail adicionada, o auto-placement empilharia topbar, abas e
+   corpo na coluna estreita da esquerda. As sobreposições são `fixed` e não
+   participam da grade. */
+.app > .topbar,
+.app > .tabs,
+.app > .body-row {
+  grid-column: 2;
+}
+
+.app > .topbar {
+  grid-row: 1;
+}
+
+.app > .tabs {
+  grid-row: 2;
+}
+
+.app > .body-row {
+  grid-row: 3;
+}
+
+/* O rail fica acima das sobreposições (z-index 50) para a navegação nunca
+   morrer atrás de um backdrop — é o mapa do app, não uma camada a cobrir.
+   Só a introdução (70) fica acima dele, porque ela é a tela de primeira
+   execução e não deve deixar nada clicável por baixo. */
+.nav-rail {
+  grid-row: 1 / 4;
+  grid-column: 1;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface-1);
+  border-right: var(--border-width) solid var(--border-subtle);
+}
+
+.nav-rail-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--topbar-h);
+  padding: 0 var(--space-4);
+  flex-shrink: 0;
+}
+
+/* A marca vive num losango de acento: é o primeiro contato visual com o app
+   em toda janela, e a cor quente separa a navegação da ferramenta. */
+.nav-rail-logo {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  color: var(--accent);
+  background: var(--accent-quiet);
+  box-shadow: var(--sheen);
+}
+
+.nav-rail-wordmark {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.18em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.nav-rail-items {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-3) var(--space-7);
+}
+
+.nav-rail-sep {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-4) var(--space-4);
+}
+
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-fluid),
+    color var(--dur-fast) var(--ease-fluid);
+}
+
+.nav-item:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.nav-item.active {
+  background: var(--accent-quiet);
+  color: var(--text);
+  font-weight: var(--weight-medium);
+}
+
+/* O indicador de rota: uma tarja de acento na borda esquerda, discreta mas
+   inconfundível — o único lugar do app onde o acento pinta um fundo. */
+.nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 26%;
+  bottom: 26%;
+  width: 3px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
+.nav-item-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-item-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A dica explica o destino em uma linha. Some no modo ícone (janela
+   estreita), onde não há largura para ela. */
+.nav-item-hint {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-rail-footer {
+  flex-shrink: 0;
+  padding: var(--space-4) var(--space-5);
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.nav-rail-version {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  letter-spacing: 0.06em;
+}
+
+/* Em janela estreita o rail encolhe para a largura de um ícone, e o que
+   sobra de espaço vai para o terminal — que é quem sofre primeiro quando
+   a tela aperta. O rótulo vira tooltip nativo (`title` no botão). */
+@media (max-width: 900px) {
+  :root {
+    --rail-w: 58px;
+  }
+
+  .nav-rail-wordmark,
+  .nav-item-hint,
+  .nav-rail-version {
+    display: none;
+  }
+
+  .nav-rail-items {
+    align-items: center;
+  }
+
+  .nav-item {
+    justify-content: center;
+    padding: var(--space-3);
+  }
+
+  .nav-item-text {
+    display: none;
+  }
+}
+
+/* ======================== telas: configurações e perfil ================== */
+
+.settings-panel {
+  width: min(640px, 92vw);
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+}
+
+.settings-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.settings-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.settings-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.settings-link-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.settings-current {
+  color: var(--text-muted);
+}
+
+.profile-panel {
+  width: min(700px, 92vw);
+}
+
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-7);
+}
+
+.profile-avatar {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: var(--radius-xl);
+  background: var(--accent-quiet);
+  color: var(--accent);
+  box-shadow: var(--sheen);
+  flex-shrink: 0;
+}
+
+.profile-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.profile-title {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-strong);
+  color: var(--text);
+}
+
+.profile-sub {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.profile-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-4);
+  padding: 0 var(--space-7) var(--space-7);
+}
+
+.profile-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  background: var(--surface-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--sheen);
+  min-width: 0;
+}
+
+.profile-card-label {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.profile-card-value {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
+.profile-card-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-shells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.profile-shell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 560px) {
+  .settings-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ================================ introdução ============================= */
+
+/* Tela inteira, acima de tudo (rail inclusive): é a primeira execução, e
+   nada do app deve distrair antes da apresentação acabar. */
+.onboarding {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--scrim);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+  animation: jarvis-fade-in var(--dur-fast) var(--ease-fluid);
+  overflow-y: auto;
+  padding: var(--space-7);
+}
+
+/* Halo de acento atrás do cartão: dá à caixa uma origem de luz — o "coração"
+   do JARVIS — em vez de uma placa flutuando no vazio. */
+.onboarding-glow {
+  position: absolute;
+  top: 12%;
+  left: 50%;
+  width: 420px;
+  height: 420px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-quiet), transparent 68%);
+  filter: blur(10px);
+  pointer-events: none;
+}
+
+.onboarding-card {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--surface-1);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-3);
+  padding: var(--space-8) var(--space-8) var(--space-7);
+  animation: jarvis-rise var(--dur-normal) var(--ease-spring) backwards;
+  outline: none;
+}
+
+.onboarding-steps {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-7);
+}
+
+.onboarding-step {
+  flex: 1;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  transition: background var(--dur-fast) var(--ease-fluid);
+}
+
+.onboarding-step.done {
+  background: var(--accent);
+}
+
+.onboarding-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.onboarding-slide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  text-align: center;
+  animation: jarvis-rise var(--dur-normal) var(--ease-fluid) backwards;
+}
+
+.onboarding-logo {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  margin: 0 auto;
+  border-radius: var(--radius-xl);
+  background: var(--accent-quiet);
+  color: var(--accent);
+  box-shadow: var(--sheen);
+}
+
+.onboarding h1,
+.onboarding h2 {
+  margin: 0;
+  color: var(--text);
+}
+
+.onboarding h1 {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-strong);
+}
+
+.onboarding h2 {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-strong);
+}
+
+.onboarding-lead {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+}
+
+.onboarding-features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  text-align: left;
+}
+
+.onboarding-features li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+}
+
+.onboarding-features .icon {
+  color: var(--accent);
+}
+
+.onboarding-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.chip.onboarding-primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: transparent;
+}
+
+.chip.onboarding-primary:hover {
+  background: var(--accent-hover);
+  color: var(--accent-contrast);
+}
+
+/* Pastilha marcada (tema, densidade): o mesmo estado "ligado" das outras
+   seleções, só que para chips que não têm uma classe própria. */
+.chip.chip-on {
+  background: var(--accent-quiet);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.onboarding-temas {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+
+.onboarding-card-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--surface-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: center;
+  transition:
+    border-color var(--dur-fast) var(--ease-fluid),
+    transform var(--dur-fast) var(--ease-fluid);
+}
+
+.onboarding-card-btn:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.onboarding-card-btn.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-quiet);
+}
+
+.onboarding-card-preview {
+  width: 100%;
+}
+
+/* Miniaturas de tema: sempre as mesmas cores reais dos temas, independente
+   do tema em que a própria introdução estiver rodando. Exceção deliberada à
+   regra de "nenhuma cor literal fora de tokens.css": aqui as cores QUEREM ser
+   literais — cada miniatura é a amostra de um tema específico, e traduzir
+   para tokens as faria mudar de aparência conforme o tema da janela. */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--space-3);
+  border-radius: var(--radius-xs);
+}
+
+.preview i {
+  display: block;
+  height: 6px;
+  border-radius: 2px;
+  background: rgba(128, 138, 158, 0.35);
+}
+
+.preview i:nth-child(2) {
+  width: 70%;
+}
+
+.preview i:nth-child(3) {
+  width: 40%;
+}
+
+.preview-dark {
+  background: #0b0d11;
+  border: 1px solid #232936;
+}
+
+.preview-light {
+  background: #f6f7f9;
+  border: 1px solid #dde1e8;
+}
+
+.preview-system {
+  background: linear-gradient(90deg, #f6f7f9 0%, #f6f7f9 50%, #0b0d11 50%, #0b0d11 100%);
+  border: 1px solid #232936;
+}
+
+.onboarding-card-label {
+  font-weight: var(--weight-medium);
+}
+
+.onboarding-card-desc {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.onboarding-densidades {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.onboarding-field-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.onboarding-pills {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.onboarding-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+
+.onboarding-atalhos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  text-align: left;
+}
+
+.onboarding-atalhos li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.onboarding-atalhos kbd {
+  min-width: 132px;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-3);
+  border: var(--border-width) solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  text-align: center;
+}
+
+.onboarding-atalhos span {
+  color: var(--text-muted);
+}
+
+.onboarding-skip {
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-6);
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.onboarding-skip:hover {
+  color: var(--text);
+}
+
+@media (max-width: 560px) {
+  .onboarding-temas {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-card {
+    padding: var(--space-6);
+  }
 }

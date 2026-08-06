@@ -30,12 +30,16 @@ export interface UiStore {
   /** O tema efetivamente pintado — `system` já resolvido. */
   resolved: ResolvedTheme;
   density: Density;
+  /** Introdução de primeira execução já concluída. */
+  onboardingDone: boolean;
 
   setThemeMode: (mode: ThemeMode) => void;
+  /** Marca a introdução como vista (ou a reexibe, passando `false`). */
+  setOnboardingDone: (done: boolean) => void;
   cycleTheme: () => void;
   setDensity: (d: Density) => void;
   /** Aplica o que veio do disco, sem regravar. */
-  hydrate: (raw: { theme?: unknown; density?: unknown }) => void;
+  hydrate: (raw: { theme?: unknown; density?: unknown; onboardingDone?: unknown }) => void;
   /** Liga o ouvinte do tema do sistema. Devolve o cancelador. */
   startSystemWatch: () => () => void;
 }
@@ -54,6 +58,10 @@ export const useUiStore = create<UiStore>((set, get) => ({
   themeMode: "system",
   resolved: resolveTheme("system"),
   density: "cozy",
+  // Otimista: a introdução só aparece quando o config em disco diz que ela
+  // ainda não foi vista. Começar como "vista" evita um flash de onboarding
+  // para quem já usou o app, enquanto o config carrega em paralelo.
+  onboardingDone: true,
 
   setThemeMode: (mode) => {
     const resolved = resolveTheme(mode);
@@ -84,10 +92,20 @@ export const useUiStore = create<UiStore>((set, get) => ({
     const mode = parseThemeMode(raw.theme);
     const density = parseDensity(raw.density);
     const resolved = resolveTheme(mode);
-    set({ themeMode: mode, resolved, density });
+    set({
+      themeMode: mode,
+      resolved,
+      density,
+      onboardingDone: raw.onboardingDone !== false,
+    });
     paint(resolved);
     rememberThemeMode(mode);
     applyDensity(density);
+  },
+
+  setOnboardingDone: (done) => {
+    set({ onboardingDone: done });
+    void configSave({ ui: { onboardingDone: done } }).catch(() => {});
   },
 
   startSystemWatch: () =>

@@ -55,6 +55,7 @@ fn round_trip_real_em_disco_preserva_tudo() {
             ai_panel_open: false,
             theme: "dark".into(),
             density: "cozy".into(),
+            onboarding_done: false,
         },
         layout: Some(serde_json::json!({"tipo":"split","filhos":[1,2]})),
         session_history: None,
@@ -116,6 +117,7 @@ fn as_chaves_gravadas_sao_camel_case_como_o_front_espera() {
         "createdAt",
         "sidebarOpen",
         "aiPanelOpen",
+        "onboardingDone",
         "maxTokens",
         "apiKey",
     ] {

@@ -253,6 +253,8 @@ export interface UiConfigPayload {
   theme: string;
   /** `"compact" | "cozy"`. */
   density: string;
+  /** Introdução de primeira execução já concluída. */
+  onboardingDone: boolean;
 }
 
 export interface AppConfig {

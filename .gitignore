@@ -6,6 +6,7 @@ src-tauri/gen/schemas/
 .DS_Store
 test-results/
 playwright-report/
+shots-menu/
 .claude/
 # Chave privada do updater. Se ela vazar, qualquer um assina um "update"
 # que os JARVIS instalados aceitam como legítimo. Mora fora do repo

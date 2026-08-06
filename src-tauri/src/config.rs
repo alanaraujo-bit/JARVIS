@@ -177,6 +177,16 @@ pub struct UiConfig {
     /// Densidade da interface: `"compact" | "cozy"`.
     #[serde(default = "default_density")]
     pub density: String,
+    /// `true` quando a pessoa já viu a introdução de primeira execução.
+    /// A flag mora aqui, e não no front, porque é a única forma de ela
+    /// sobreviver a um F5 sem depender de mais um localStorage.
+    ///
+    /// O default é `false` também para configs antigos que não têm o campo
+    /// (`serde(default)`): quem atualiza para a versão com o menu novo vê a
+    /// introdução uma vez — é a apresentação da navegação que mudou, não um
+    /// bug de "primeira execução" reaparecendo.
+    #[serde(default)]
+    pub onboarding_done: bool,
 }
 
 fn default_theme() -> String {
@@ -194,6 +204,7 @@ impl Default for UiConfig {
             ai_panel_open: false,
             theme: default_theme(),
             density: default_density(),
+            onboarding_done: false,
         }
     }
 }
@@ -316,6 +327,8 @@ pub struct UiPatch {
     pub theme: Option<String>,
     #[serde(default)]
     pub density: Option<String>,
+    #[serde(default)]
+    pub onboarding_done: Option<bool>,
 }
 
 fn double_option<'de, D>(d: D) -> std::result::Result<Option<Option<String>>, D::Error>
@@ -360,6 +373,9 @@ impl AppConfig {
             }
             if let Some(v) = ui.density {
                 self.ui.density = v;
+            }
+            if let Some(v) = ui.onboarding_done {
+                self.ui.onboarding_done = v;
             }
         }
     }

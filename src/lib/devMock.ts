@@ -139,7 +139,15 @@ export function installDevMock(): void {
       temperature: 0.7,
       maxTokens: 2048,
     },
-    ui: { sidebarOpen: false, aiPanelOpen: false, theme: "system", density: "cozy" },
+    ui: {
+      sidebarOpen: false,
+      aiPanelOpen: false,
+      theme: "system",
+      density: "cozy",
+      // E2e: a introdução é uma tela de primeira execução, e os testes
+      // funcionais precisam da interface pronta — não da apresentação.
+      onboardingDone: true,
+    },
     claudeAccounts: [],
     defaultClaudeAccountId: null,
   };

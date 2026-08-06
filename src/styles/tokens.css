@@ -87,6 +87,8 @@
   --tabbar-h: 34px;
   --sidebar-width: 248px;
   --ai-panel-width: 380px;
+  /* Menu lateral. Largo o bastante para rótulo + dica do item caberem. */
+  --rail-w: 200px;
 
   color-scheme: dark;
 }
@@ -98,6 +100,7 @@
   --space-5: 10px;
   --space-6: 12px;
   --space-7: 18px;
+  --rail-w: 172px;
 }
 
 /* ========================================================================

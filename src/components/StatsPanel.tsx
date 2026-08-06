@@ -10,7 +10,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
 
 import {
-  claudeSettingsSet,
   claudeUsageByAccount,
   claudeUsageSummary,
   type ClaudeAccountUsage,
@@ -19,12 +18,10 @@ import {
 } from "../lib/ipc";
 import { useAccountStore } from "../stores/accountStore";
 import { computeStats, formatBytes, formatDuration } from "../lib/stats";
+import { ClaudeConfigForm } from "./ClaudeConfigForm";
 
 /** Câmbio aproximado só pra dar uma ordem de grandeza em reais — não é cotação ao vivo. */
 const USD_TO_BRL_APROX = 5.4;
-
-const MODELOS_SUGERIDOS = ["sonnet", "opus", "haiku", "claude-sonnet-5", "claude-opus-5"];
-const ESFORCOS_SUGERIDOS = ["low", "medium", "high", "max"];
 
 function formatUsd(v: number): string {
   return `US$ ${v.toFixed(v < 1 ? 4 : 2)}`;
@@ -74,9 +71,6 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
   /* --------------------------- uso do Claude Code ------------------------ */
   const [claude, setClaude] = useState<ClaudeUsageSummary | null>(null);
   const [claudeErro, setClaudeErro] = useState<string | null>(null);
-  const [pendenteModelo, setPendenteModelo] = useState("");
-  const [pendenteEsforco, setPendenteEsforco] = useState("");
-  const [salvando, setSalvando] = useState(false);
 
   // Ignora uma resposta que chegue depois de outra mais nova (painel fechado
   // e reaberto rápido o bastante pra dois `claudeUsageSummary()` se
@@ -123,8 +117,6 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
         if (requisicaoRef.current !== minha) return;
         setClaude(s);
         setClaudeErro(null);
-        setPendenteModelo(s.currentModel ?? "");
-        setPendenteEsforco(s.currentEffort ?? "");
       })
       .catch((e) => {
         if (requisicaoRef.current !== minha) return;
@@ -135,23 +127,6 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
   useEffect(() => {
     if (open) carregarClaude();
   }, [open, carregarClaude]);
-
-  const aplicarModeloEsforco = useCallback(async () => {
-    const modelo = pendenteModelo.trim();
-    const esforco = pendenteEsforco.trim();
-    setSalvando(true);
-    try {
-      await claudeSettingsSet(dirDoFormulario, modelo || undefined, esforco || undefined);
-      carregarClaude();
-    } catch (e) {
-      setClaudeErro(String(e));
-    } finally {
-      setSalvando(false);
-    }
-  }, [pendenteModelo, pendenteEsforco, carregarClaude, dirDoFormulario]);
-
-  const mudouConfig =
-    !!claude && (pendenteModelo !== (claude.currentModel ?? "") || pendenteEsforco !== (claude.currentEffort ?? ""));
   // A barra tem que medir a mesma coisa que o número ao lado dela (bytes),
   // não a contagem de sessões: com uma sessão por shell — o caso comum —
   // `sessions / maiorUso` dava 100% para todo mundo, e a barra virava um
@@ -310,45 +285,7 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
             </>
           )}
 
-          <div className="stats-claude-config">
-            <label className="stats-claude-field">
-              <span>Modelo</span>
-              <input
-                list="stats-claude-modelos"
-                value={pendenteModelo}
-                onChange={(e) => setPendenteModelo(e.target.value)}
-                placeholder="ex.: sonnet"
-              />
-              <datalist id="stats-claude-modelos">
-                {MODELOS_SUGERIDOS.map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
-            </label>
-
-            <label className="stats-claude-field">
-              <span>Esforço</span>
-              <input
-                list="stats-claude-esforcos"
-                value={pendenteEsforco}
-                onChange={(e) => setPendenteEsforco(e.target.value)}
-                placeholder="ex.: high"
-              />
-              <datalist id="stats-claude-esforcos">
-                {ESFORCOS_SUGERIDOS.map((e) => (
-                  <option key={e} value={e} />
-                ))}
-              </datalist>
-            </label>
-
-            <button
-              className="chip"
-              disabled={!mudouConfig || salvando}
-              onClick={() => void aplicarModeloEsforco()}
-            >
-              {salvando ? "Aplicando…" : "Aplicar"}
-            </button>
-          </div>
+          <ClaudeConfigForm configDir={dirDoFormulario} onSaved={carregarClaude} />
           <p className="stats-note stats-note-tight">
             Grava direto em <code>~/.claude/settings.json</code> — vale para a próxima vez que a
             CLI <code>claude</code> for iniciada num terminal.

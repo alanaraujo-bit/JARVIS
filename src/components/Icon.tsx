@@ -53,6 +53,8 @@ export type IconName =
   | "coins"
   | "pencil"
   | "history"
+  | "home"
+  | "logo"
   | "mic"
   | "pwsh"
   | "cmd"
@@ -233,6 +235,25 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M12 7.8V12l3 1.8" />
     </>
   ),
+  /* Casa do menu: o ponto de partida da navegação, o lugar para onde
+     qualquer caminho dentro do app devolve. */
+  home: (
+    <>
+      <path d="M4 11.2 12 4.6l8 6.6" />
+      <path d="M6 10v9.4h12V10" />
+    </>
+  ),
+  /* Marca do JARVIS: um hexágono com núcleo aceso — o "coração" que dá
+     nome ao app. Usado na grade do menu e na tela de introdução. */
+  logo: (
+    <>
+      <path d="M12 3.2 19.4 7.4v9.2L12 20.8 4.6 16.6V7.4L12 3.2Z" />
+      <path d="M9.2 9.4a3.4 3.4 0 0 1 5.6 0" />
+      <path d="M10.7 9.4a1.7 1.7 0 0 1 2.6 0" />
+      <circle cx="12" cy="12.6" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+
   /* Microfone da barra de ditado: cápsula com suporte, o desenho que o
      teclado de qualquer celular usa para o áudio — reconhecível sem texto. */
   mic: (
