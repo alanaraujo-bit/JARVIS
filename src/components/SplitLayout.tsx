@@ -60,6 +60,19 @@ export function SplitLayout({
         onMouseDown={() => onFocusPane(node.id)}
       >
         <TerminalView sessionId={node.sessionId} focused={node.id === activePaneId} />
+        {info && (
+          // Etiqueta discreta da pasta onde o terminal foi aberto. Só o nome
+          // final (o "projeto"), com o caminho inteiro no tooltip — é o que
+          // permite achar, num monte de painéis, em qual pasta cada um vive.
+          <span
+            className="pane-cwd"
+            title={info.cwd}
+            aria-label={`Pasta de trabalho: ${info.cwd}`}
+          >
+            <Icon name="folder" size={12} />
+            <span className="pane-cwd-label">{folderLabel(info.cwd)}</span>
+          </span>
+        )}
         {unjobbed && !dead && (
           <span
             className="pane-warn"
@@ -115,6 +128,15 @@ export function SplitLayout({
       onRestartPane={onRestartPane}
     />
   );
+}
+
+/** Só a última pasta de um caminho — "C:\Users\X\Projetos\JARVIS" → "JARVIS". */
+function folderLabel(cwd: string): string {
+  const semBarra = cwd.replace(/[\\/]+$/, "");
+  const separador = Math.max(semBarra.lastIndexOf("\\"), semBarra.lastIndexOf("/"));
+  const nome = separador >= 0 ? semBarra.slice(separador + 1) : semBarra;
+  // Raiz ("C:\", "/") não tem nome de pasta: devolve o caminho inteiro.
+  return nome || semBarra;
 }
 
 function SplitBranch({

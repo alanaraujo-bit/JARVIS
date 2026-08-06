@@ -142,6 +142,8 @@ export function installDevMock(): void {
     ui: {
       sidebarOpen: false,
       aiPanelOpen: false,
+      // Menu lateral minimizado por padrão, igual ao app de verdade.
+      railExpanded: false,
       theme: "system",
       density: "cozy",
       // E2e: a introdução é uma tela de primeira execução, e os testes

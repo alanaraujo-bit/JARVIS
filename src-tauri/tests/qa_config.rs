@@ -53,6 +53,7 @@ fn round_trip_real_em_disco_preserva_tudo() {
         ui: jarvis_lib::config::UiConfig {
             sidebar_open: true,
             ai_panel_open: false,
+            rail_expanded: true,
             theme: "dark".into(),
             density: "cozy".into(),
             onboarding_done: false,
@@ -89,6 +90,10 @@ fn round_trip_real_em_disco_preserva_tudo() {
     assert_eq!(lido.ai.temperature, 0.35);
     assert_eq!(lido.ai.max_tokens, 8192);
     assert!(lido.ui.sidebar_open && !lido.ui.ai_panel_open);
+    // O menu lateral expandido tem que sobreviver ao disco — é a preferência
+    // de layout que o usuário escolheu, e um `true` (não o default) é o que
+    // prova que o campo de fato atravessa o round-trip.
+    assert!(lido.ui.rail_expanded);
     assert_eq!(lido.layout, original.layout);
 
     let _ = fs::remove_dir_all(&dir);
@@ -117,6 +122,7 @@ fn as_chaves_gravadas_sao_camel_case_como_o_front_espera() {
         "createdAt",
         "sidebarOpen",
         "aiPanelOpen",
+        "railExpanded",
         "onboardingDone",
         "maxTokens",
         "apiKey",

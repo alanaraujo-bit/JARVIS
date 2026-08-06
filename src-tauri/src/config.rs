@@ -168,6 +168,12 @@ pub struct UiConfig {
     pub sidebar_open: bool,
     #[serde(default)]
     pub ai_panel_open: bool,
+    /// Menu lateral expandido (com rótulos) ou recolhido (só ícones).
+    /// `false` por padrão de propósito: o menu nasce minimizado e só
+    /// expande quando a pessoa pede — e configs antigos sem o campo
+    /// (`serde(default)`) ganham o comportamento novo sem reescrita.
+    #[serde(default)]
+    pub rail_expanded: bool,
     /// `"system" | "dark" | "light"`. String livre de propósito: um valor
     /// desconhecido escrito por uma versão futura não pode derrubar o parse
     /// do arquivo inteiro — o front trata o que não reconhece como
@@ -202,6 +208,7 @@ impl Default for UiConfig {
         Self {
             sidebar_open: false,
             ai_panel_open: false,
+            rail_expanded: false,
             theme: default_theme(),
             density: default_density(),
             onboarding_done: false,
@@ -324,6 +331,8 @@ pub struct UiPatch {
     #[serde(default)]
     pub ai_panel_open: Option<bool>,
     #[serde(default)]
+    pub rail_expanded: Option<bool>,
+    #[serde(default)]
     pub theme: Option<String>,
     #[serde(default)]
     pub density: Option<String>,
@@ -367,6 +376,9 @@ impl AppConfig {
             }
             if let Some(v) = ui.ai_panel_open {
                 self.ui.ai_panel_open = v;
+            }
+            if let Some(v) = ui.rail_expanded {
+                self.ui.rail_expanded = v;
             }
             if let Some(v) = ui.theme {
                 self.ui.theme = v;

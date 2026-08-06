@@ -249,6 +249,8 @@ export interface ClaudeAccountPayload {
 export interface UiConfigPayload {
   sidebarOpen: boolean;
   aiPanelOpen: boolean;
+  /** Menu lateral expandido (rótulos) ou recolhido (só ícones). */
+  railExpanded: boolean;
   /** `"system" | "dark" | "light"` — string livre; o front valida ao ler. */
   theme: string;
   /** `"compact" | "cozy"`. */

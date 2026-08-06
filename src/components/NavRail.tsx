@@ -7,10 +7,12 @@
  * sempre visível — Início, Estatísticas, Histórico, Contas, Configurações e
  * Perfil — com o item ativo marcado e a marca do app no topo.
  *
- * Design: a largura expande com rótulos em janela larga e encolhe para
- * ícones em janela estreita (onde sobra pouco espaço para o terminal). O
- * rótulo nunca some de verdade: em modo ícone ele vira tooltip próprio
- * (`aria-label`), então a navegação continua legível para leitor de tela.
+ * Design: a largura é uma preferência do usuário, não do tamanho da janela.
+ * Recolhido (padrão) o rail mostra só ícones e devolve o espaço ao
+ * terminal; expandido, os rótulos voltam. O botão no rodapé alterna os
+ * dois estados, e o rótulo nunca some de verdade: em modo ícone ele vira
+ * tooltip próprio (`aria-label`), então a navegação continua legível para
+ * leitor de tela.
  */
 
 import { usePointerGlow } from "../hooks/usePointerGlow";
@@ -20,6 +22,7 @@ import { Icon, type IconName } from "./Icon";
 /** Destinos que a grade pode abrir. */
 export type RailDest =
   | "home"
+  | "notes"
   | "stats"
   | "history"
   | "accounts"
@@ -28,7 +31,11 @@ export type RailDest =
 
 interface NavRailProps {
   active: RailDest;
+  notesOpen?: boolean;
   onSelect: (dest: RailDest) => void;
+  /** `true` = expandido, com rótulos. `false` = recolhido, só ícones. */
+  expanded: boolean;
+  onToggleRail: () => void;
 }
 
 interface Item {
@@ -45,6 +52,13 @@ const ITENS: Item[] = [
     icon: "home",
     label: "Início",
     hint: "Seus terminais e workspaces",
+    group: "principal",
+  },
+  {
+    dest: "notes",
+    icon: "pencil",
+    label: "Notas",
+    hint: "Bloco de anotações do Vibe Coding",
     group: "principal",
   },
   {
@@ -84,9 +98,11 @@ const ITENS: Item[] = [
   },
 ];
 
-export function NavRail({ active, onSelect }: NavRailProps) {
+export function NavRail({ active, onSelect, expanded, onToggleRail, notesOpen }: NavRailProps) {
   const versao = useUpdateStore((s) => s.versaoAtual);
   const glowRef = usePointerGlow<HTMLDivElement>();
+
+  const isAtivo = (dest: RailDest) => active === dest || (dest === "notes" && !!notesOpen);
 
   return (
     <nav className="nav-rail" aria-label="Menu principal">
@@ -104,10 +120,10 @@ export function NavRail({ active, onSelect }: NavRailProps) {
               <div className="nav-rail-sep" aria-hidden="true" />
             )}
             <button
-              className={`nav-item ${active === item.dest ? "active" : ""}`}
+              className={`nav-item ${isAtivo(item.dest) ? "active" : ""}`}
               onClick={() => onSelect(item.dest)}
               aria-label={item.label}
-              aria-current={active === item.dest ? "page" : undefined}
+              aria-current={isAtivo(item.dest) ? "page" : undefined}
               title={item.label}
             >
               <Icon name={item.icon} size={18} />
@@ -121,6 +137,18 @@ export function NavRail({ active, onSelect }: NavRailProps) {
       </div>
 
       <div className="nav-rail-footer">
+        <button
+          className="nav-rail-toggle"
+          onClick={onToggleRail}
+          aria-expanded={expanded}
+          title={expanded ? "Recolher o menu (só ícones)" : "Expandir o menu (rótulos)"}
+          aria-label={expanded ? "Recolher o menu" : "Expandir o menu"}
+        >
+          <Icon name={expanded ? "chevron-left" : "chevron-right"} size={14} />
+          <span className="nav-rail-toggle-text">
+            {expanded ? "Recolher" : "Expandir"}
+          </span>
+        </button>
         {versao && <span className="nav-rail-version">v{versao}</span>}
       </div>
     </nav>

@@ -15,6 +15,7 @@ export interface ShortcutActions {
   openFolder: () => void;
   toggleWorkspaceSidebar: () => void;
   toggleAiPanel: () => void;
+  toggleNotes: () => void;
   clearAiChat: () => void;
   // Paleta + estatísticas + histórico
   togglePalette: () => void;
@@ -120,6 +121,11 @@ export function useShortcuts(actions: ShortcutActions) {
       if (ctrl && e.shiftKey && !e.altKey && e.key.toLowerCase() === "i") {
         consume(e);
         actions.toggleAiPanel();
+        return;
+      }
+      if (ctrl && e.shiftKey && !e.altKey && e.key.toLowerCase() === "n") {
+        consume(e);
+        actions.toggleNotes();
         return;
       }
       if (ctrl && e.shiftKey && !e.altKey && e.key.toLowerCase() === "l") {

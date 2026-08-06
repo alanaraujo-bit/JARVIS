@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SplitLayout } from "./components/SplitLayout";
 import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
 import { AiPanel } from "./components/AiPanel";
+import { NotesPanel } from "./components/NotesPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { StatsPanel } from "./components/StatsPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -17,6 +18,7 @@ import type { Command as PaletteCommand } from "./lib/palette";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { useAiStore } from "./stores/aiStore";
+import { useNotesStore } from "./stores/notesStore";
 import { useUiStore } from "./stores/uiStore";
 import { useUpdateStore } from "./stores/updateStore";
 import { useAccountStore } from "./stores/accountStore";
@@ -150,6 +152,8 @@ export default function App() {
   const startSystemWatch = useUiStore((s) => s.startSystemWatch);
   const density = useUiStore((s) => s.density);
   const setDensity = useUiStore((s) => s.setDensity);
+  const railExpanded = useUiStore((s) => s.railExpanded);
+  const setRailExpanded = useUiStore((s) => s.setRailExpanded);
   const onboardingDone = useUiStore((s) => s.onboardingDone);
   const setOnboardingDone = useUiStore((s) => s.setOnboardingDone);
 
@@ -173,6 +177,9 @@ export default function App() {
   const setAiPanelOpen = useAiStore((s) => s.setPanelOpen);
   const clearAiMessages = useAiStore((s) => s.clearMessages);
 
+  const notesOpen = useNotesStore((s) => s.panelOpen);
+  const toggleNotes = useNotesStore((s) => s.togglePanel);
+
   /**
    * Abaixo de 900px as duas gavetas passam a flutuar sobre o terminal em vez
    * de disputar espaço com ele (ver `styles.css`). Com as duas abertas ao
@@ -189,6 +196,15 @@ export default function App() {
     if (window.innerWidth <= ESTREITO && !aiPanelOpen) setSidebarOpen(false);
     toggleAiPanelRaw();
   }, [aiPanelOpen, setSidebarOpen, toggleAiPanelRaw]);
+
+  /**
+   * Recolhe ou expande o menu lateral. É o único caminho que alterna o
+   * estado — o botão do rodapé do rail e a paleta passam os dois por aqui,
+   * para o estado nunca divergir entre si.
+   */
+  const toggleRail = useCallback(() => {
+    setRailExpanded(!railExpanded);
+  }, [railExpanded, setRailExpanded]);
 
   /**
    * Fecha as telas de Configurações e Perfil. Separado porque elas se
@@ -208,6 +224,7 @@ export default function App() {
   const selecionarRota = useCallback(
     (dest: RailDest) => {
       const eraAtiva =
+        (dest === "notes" && notesOpen) ||
         (dest === "stats" && statsOpen) ||
         (dest === "history" && historyOpen) ||
         (dest === "accounts" && contasPainelAberto) ||
@@ -224,6 +241,9 @@ export default function App() {
       }
 
       switch (dest) {
+        case "notes":
+          toggleNotes();
+          break;
         case "stats":
           setStatsOpen(!eraAtiva);
           break;
@@ -247,6 +267,8 @@ export default function App() {
       }
     },
     [
+      notesOpen,
+      toggleNotes,
       statsOpen,
       historyOpen,
       contasPainelAberto,
@@ -1016,6 +1038,7 @@ export default function App() {
       openFolder: () => void openFolderAndAdd(),
       toggleWorkspaceSidebar: toggleSidebar,
       toggleAiPanel,
+      toggleNotes,
       clearAiChat: clearAiMessages,
       // Abrir uma sobreposição fecha a outra: as duas ocupam o centro da
       // tela e empilhadas o backdrop de uma comeria os cliques da outra.
@@ -1048,6 +1071,7 @@ export default function App() {
       openFolderAndAdd,
       toggleSidebar,
       toggleAiPanel,
+      toggleNotes,
       clearAiMessages,
       fecharTelas,
     ],
@@ -1206,6 +1230,13 @@ export default function App() {
         run: toggleSidebar,
       },
       {
+        id: "app.rail",
+        title: railExpanded ? "Recolher o menu lateral" : "Expandir o menu lateral",
+        group: "Aplicativo",
+        keywords: "menu lateral nav rail recolher retrair expandir rótulos",
+        run: toggleRail,
+      },
+      {
         id: "ws.free",
         title: "Modo livre (sem workspace)",
         group: "Workspaces",
@@ -1227,6 +1258,14 @@ export default function App() {
         shortcut: "Ctrl+Shift+L",
         keywords: "chat apagar",
         run: clearAiMessages,
+      },
+      {
+        id: "notes.panel",
+        title: "Mostrar ou ocultar as Notas do Vibe Coding",
+        group: "Vibe Coding",
+        shortcut: "Ctrl+Shift+N",
+        keywords: "notas anotações bloco de notas notepad rascunho vibe coding",
+        run: toggleNotes,
       },
       {
         id: "app.accounts",
@@ -1448,6 +1487,8 @@ export default function App() {
     shortcutActions,
     openFolderAndAdd,
     toggleSidebar,
+    toggleRail,
+    railExpanded,
     setActiveWorkspace,
     updateWorkspace,
     activeWorkspaceId,
@@ -1520,11 +1561,13 @@ export default function App() {
 
   return (
     <div
-      className={`app ${sidebarOpen ? "sidebar-open" : ""} ${aiPanelOpen ? "ai-open" : ""}`}
+      className={`app ${railExpanded ? "rail-expanded" : "rail-collapsed"} ${
+        sidebarOpen ? "sidebar-open" : ""
+      } ${aiPanelOpen ? "ai-open" : ""}`}
       style={activeWs ? { "--ws-color": activeWs.color } as React.CSSProperties : undefined}
     >
       <UpdateBanner />
-      <NavRail active={railDest} onSelect={selecionarRota} />
+      <NavRail active={railDest} notesOpen={notesOpen} onSelect={selecionarRota} expanded={railExpanded} onToggleRail={toggleRail} />
       <header className="topbar">
         <button
           className={`topbar-btn ${sidebarOpen ? "active" : ""}`}
@@ -1676,6 +1719,15 @@ export default function App() {
           >
             <Icon name="spark" />
           </button>
+          <button
+            className={`topbar-btn notes-toggle ${notesOpen ? "active" : ""}`}
+            onClick={toggleNotes}
+            title="Notas Vibe Coding (Ctrl+Shift+N)"
+            aria-label="Notas Vibe Coding"
+            aria-pressed={notesOpen}
+          >
+            <Icon name="pencil" />
+          </button>
         </div>
       </header>
 
@@ -1790,6 +1842,9 @@ export default function App() {
                 <li>
                   <kbd>Ctrl+Shift+I</kbd> assistente de IA
                 </li>
+                <li>
+                  <kbd>Ctrl+Shift+N</kbd> notas Vibe Coding
+                </li>
               </ul>
             </div>
           )}
@@ -1812,6 +1867,10 @@ export default function App() {
         </main>
 
         <AiPanel
+          onRunCommand={runCommandInTerminal}
+          captureContext={captureAiContext}
+        />
+        <NotesPanel
           onRunCommand={runCommandInTerminal}
           captureContext={captureAiContext}
         />

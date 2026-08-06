@@ -39,6 +39,11 @@ body {
   grid-template-rows: var(--topbar-h) var(--tabbar-h) 1fr;
   grid-template-columns: var(--rail-w) 1fr;
   height: 100%;
+  /* Recolher/expandir o menu anima a coluna do rail como as gavetas animam
+     a largura delas. O ResizeObserver do terminal tem 50ms de espera antes
+     de repassar o tamanho ao PTY, então os quadros intermediários viram um
+     único resize de ConPTY, no fim. */
+  transition: grid-template-columns var(--dur-normal) var(--ease-fluid);
 }
 
 /* =============================== topbar ================================ */
@@ -522,6 +527,38 @@ body {
   background: var(--surface-1);
   border-radius: var(--radius-xs);
   padding: var(--space-1) var(--space-3);
+}
+
+/* Pílula da pasta do terminal. Fica no canto, discreta, sempre visível — é
+   justamente o "em qual projeto este painel está abrindo" que se quer ler
+   de relance quando há vários terminais abertos. */
+.pane-cwd {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 50%;
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-1);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: default;
+}
+
+.pane-cwd-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.pane-cwd:hover {
+  color: var(--text);
 }
 
 .pane-close {
@@ -1421,6 +1458,249 @@ body {
   cursor: not-allowed;
 }
 
+/* =========================== Notes panel =============================== */
+
+/* Painel de anotações do Vibe Coding lado a lado com o terminal.
+   Mesma mecânica do painel de IA, permitindo expansão fluida e sem quebrar
+   os xterms abertos na tela. */
+.notes-panel {
+  width: 0;
+  min-width: 0;
+  background: var(--surface-1);
+  border-left: 0 solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition:
+    width var(--dur-normal) var(--ease-fluid),
+    min-width var(--dur-normal) var(--ease-fluid),
+    border-left-width var(--dur-normal) var(--ease-fluid);
+}
+
+.notes-panel.open {
+  width: var(--notes-panel-width);
+  min-width: var(--notes-panel-width);
+  border-left-width: var(--border-width);
+}
+
+.notes-panel-inner {
+  display: flex;
+  flex-direction: column;
+  width: var(--notes-panel-width);
+  height: 100%;
+  min-height: 0;
+}
+
+.notes-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  height: var(--topbar-h);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border-bottom: var(--border-width) solid var(--border);
+  flex: none;
+}
+
+.notes-panel-title {
+  font-weight: var(--weight-strong);
+  font-size: var(--text-sm);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.notes-icon {
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+}
+
+.notes-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.notes-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-3);
+  font-size: var(--text-xs);
+}
+
+/* Barra de abas de notas no topo do bloco de notas */
+.notes-panel-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border-bottom: var(--border-width) solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: none;
+}
+
+.notes-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-1);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--dur-fast) var(--ease-fluid);
+  max-width: 130px;
+}
+
+.notes-tab:hover {
+  color: var(--text);
+  border-color: var(--border-hover, var(--text-muted));
+}
+
+.notes-tab.active {
+  background: var(--accent-surface, rgba(56, 189, 248, 0.1));
+  color: var(--accent, #38bdf8);
+  border-color: var(--accent, #38bdf8);
+  font-weight: var(--weight-medium);
+}
+
+.notes-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notes-tab-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.notes-tab-close:hover {
+  opacity: 1;
+}
+
+/* Editor principal */
+.notes-editor-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg, #0f1218);
+}
+
+.notes-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-width) dashed var(--border);
+  background: var(--surface-1);
+  flex: none;
+}
+
+.notes-title-input {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  font-weight: var(--weight-strong);
+  outline: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.notes-title-input::placeholder {
+  color: var(--text-muted);
+}
+
+.notes-mono-toggle {
+  font-size: var(--text-xs);
+  padding: 2px var(--space-3);
+}
+
+.notes-mono-toggle.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.notes-textarea {
+  flex: 1;
+  width: 100%;
+  padding: var(--space-4);
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+}
+
+.notes-textarea.mono {
+  font-family: var(--font-mono);
+}
+
+.notes-textarea.prose {
+  font-family: var(--font-ui);
+}
+
+/* Rodapé interativo do Vibe Coding */
+.notes-panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-1);
+  border-top: var(--border-width) solid var(--border);
+  flex: none;
+}
+
+.notes-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.run-cmd-btn {
+  background: var(--accent);
+  color: var(--bg, #000);
+  font-weight: var(--weight-strong);
+  border: var(--border-width) solid var(--accent);
+}
+
+.run-cmd-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.run-cmd-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.notes-footer-stats {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: var(--numeric);
+}
+
 /* ============================ scrollbars ================================ */
 
 ::-webkit-scrollbar {
@@ -1834,12 +2114,14 @@ body {
 @media (max-width: 1100px) {
   :root {
     --ai-panel-width: 300px;
+    --notes-panel-width: 300px;
   }
 }
 
 @media (max-width: 900px) {
   .ws-sidebar,
-  .ai-panel {
+  .ai-panel,
+  .notes-panel {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -1851,7 +2133,8 @@ body {
     left: 0;
   }
 
-  .ai-panel {
+  .ai-panel,
+  .notes-panel {
     right: 0;
   }
 }
@@ -1863,7 +2146,8 @@ body {
      também para a fechada — que tem largura zero justamente para não
      existir — e as duas cobririam a tela permanentemente. */
   .ws-sidebar.open,
-  .ai-panel.open {
+  .ai-panel.open,
+  .notes-panel.open {
     width: 100%;
     min-width: 0;
   }
@@ -1871,7 +2155,8 @@ body {
   /* O miolo acompanha: com largura travada em 248/380px ele sobraria pela
      direita da gaveta e a lista de workspaces ficaria cortada. */
   .ws-sidebar-inner,
-  .ai-panel-inner {
+  .ai-panel-inner,
+  .notes-panel-inner {
     width: 100%;
   }
 }
@@ -3399,7 +3684,11 @@ select {
 .nav-rail {
   grid-row: 1 / 4;
   grid-column: 1;
-  z-index: 60;
+  /* Abaixo das sobreposições (paleta, estatísticas, telas — todas em
+     z-index 50): quando uma abre, o backdrop a cobre como cobre o resto
+     do app. O menu nunca deve flutuar por cima do que o usuário pediu
+     para ver. */
+  z-index: 0;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -3522,6 +3811,9 @@ select {
 }
 
 .nav-rail-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   flex-shrink: 0;
   padding: var(--space-4) var(--space-5);
   border-top: var(--border-width) solid var(--border-subtle);
@@ -3533,32 +3825,66 @@ select {
   letter-spacing: 0.06em;
 }
 
-/* Em janela estreita o rail encolhe para a largura de um ícone, e o que
-   sobra de espaço vai para o terminal — que é quem sofre primeiro quando
-   a tela aperta. O rótulo vira tooltip nativo (`title` no botão). */
-@media (max-width: 900px) {
-  :root {
-    --rail-w: 58px;
-  }
+/* Botão de recolher/expandir do rodapé. Vestido como os itens do menu —
+   mesmo hover, mesmo recuo: é mais uma ação de navegação do que um
+   controle solto, e é a única forma de o menu caber em modo ícone sem
+   perder a saída para o estado cheio. */
+.nav-rail-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-fluid),
+    color var(--dur-fast) var(--ease-fluid);
+}
 
-  .nav-rail-wordmark,
-  .nav-item-hint,
-  .nav-rail-version {
-    display: none;
-  }
+.nav-rail-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
 
-  .nav-rail-items {
-    align-items: center;
-  }
+/* ========================= menu recolhido ============================== */
 
-  .nav-item {
-    justify-content: center;
-    padding: var(--space-3);
-  }
+/* Recolhido: só ícones. A largura encolhe para a de um botão e o espaço
+   sobra para o terminal — que é quem sofre primeiro quando a tela aperta.
+   É o estado padrão do app; expandir é a exceção que a pessoa pede. */
+.app.rail-collapsed {
+  --rail-w: 58px;
+}
 
-  .nav-item-text {
-    display: none;
-  }
+.app.rail-collapsed .nav-rail-brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.app.rail-collapsed .nav-rail-wordmark,
+.app.rail-collapsed .nav-item-text,
+.app.rail-collapsed .nav-rail-version,
+.app.rail-collapsed .nav-rail-toggle-text {
+  display: none;
+}
+
+.app.rail-collapsed .nav-rail-items {
+  align-items: center;
+}
+
+.app.rail-collapsed .nav-item {
+  justify-content: center;
+  padding: var(--space-3);
+}
+
+.app.rail-collapsed .nav-rail-toggle {
+  justify-content: center;
+  padding: var(--space-3);
 }
 
 /* ======================== telas: configurações e perfil ================== */
