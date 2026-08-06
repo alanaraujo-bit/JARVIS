@@ -126,3 +126,71 @@ export function tomCota(pct: number): "ok" | "atencao" | "alta" {
   if (pct >= 60) return "atencao";
   return "ok";
 }
+
+/**
+ * Contagem regressiva com segundos — a versão precisa do `formatCountdown`,
+ * para o painel aberto mostrar o relógio andando: "1h 14min 58s",
+ * "14min 58s", "58s". Acima de um dia os segundos não acrescentam nada que
+ * o olho leia, e o texto vira "5d 14h".
+ */
+export function formatFaltaSegundos(resetsAtMs: number, agora: number = Date.now()): string {
+  if (!Number.isFinite(resetsAtMs) || resetsAtMs <= 0) return "agora";
+  const falta = resetsAtMs - agora;
+  if (falta <= 0) return "agora";
+  const s = Math.floor(falta / 1000);
+  const dias = Math.floor(s / 86_400);
+  const h = Math.floor((s % 86_400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const seg = s % 60;
+  if (dias > 0) return h === 0 ? `${dias}d` : `${dias}d ${h}h`;
+  if (h > 0) return `${h}h ${m}min ${seg}s`;
+  if (m > 0) return `${m}min ${seg}s`;
+  return `${seg}s`;
+}
+
+/**
+ * Horário local em que a janela zera, com o dia abreviado quando não é hoje:
+ * "hoje às 12:19", "amanhã às 03:59", "12/08 às 00:59". O countdown diz
+ * quanto falta; esta linha diz *quando* — os dois juntos não deixam dúvida.
+ */
+export function formatResetAbsoluto(resetsAtMs: number, agora: number = Date.now()): string {
+  if (!Number.isFinite(resetsAtMs) || resetsAtMs <= 0) return "—";
+  const d = new Date(resetsAtMs);
+  const hora = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const mesmaData = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  const inicio = new Date(agora);
+  if (mesmaData(d, inicio)) return `hoje às ${hora}`;
+  const amanha = new Date(inicio);
+  amanha.setDate(amanha.getDate() + 1);
+  if (mesmaData(d, amanha)) return `amanhã às ${hora}`;
+  const data = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const ano = d.getFullYear() !== inicio.getFullYear() ? `/${d.getFullYear()}` : "";
+  return `${data}${ano} às ${hora}`;
+}
+
+/** O que uma cota é, em palavras: tom visual + rótulo para a tela. */
+export interface EstadoCota {
+  tom: "ok" | "atencao" | "alta";
+  rotulo: string;
+}
+
+/**
+ * Estado legível de uma cota. 100% vira "Esgotada" — quando a janela acabou,
+ * o texto importa mais que a cor, e "quase no limite" não descreve um
+ * limite já atingido.
+ */
+export function estadoCota(pct: number): EstadoCota {
+  if (pct >= 100) return { tom: "alta", rotulo: "Esgotada" };
+  if (pct >= COTA_ALERTA_PCT) return { tom: "alta", rotulo: "Quase no limite" };
+  if (pct >= 60) return { tom: "atencao", rotulo: "Atenção" };
+  return { tom: "ok", rotulo: "Folga" };
+}
+
+/** Percentual usado de um limite (créditos extras), preso em 0–100. */
+export function pctDeUso(usado: number, limite: number): number {
+  if (!Number.isFinite(usado) || !Number.isFinite(limite) || limite <= 0) return 0;
+  return Math.max(0, Math.min(100, (usado / limite) * 100));
+}

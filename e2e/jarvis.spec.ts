@@ -230,6 +230,26 @@ test("o painel de uso mostra uma linha por conta", async ({ page }) => {
   await expect(stats.locator(".stats-conta")).toHaveCount(2);
 });
 
+test("o painel de uso mostra a cota ao vivo com contagem regressiva", async ({ page }) => {
+  // Sem contas, a cota consultada é a da configuração principal (~/.claude):
+  // o mock responde como se houvesse login e janelas de cota de verdade.
+  await page.keyboard.press("Control+Shift+S");
+  const stats = page.getByRole("dialog", { name: "Estatísticas de uso" });
+
+  // Hero da cota: badge de origem + as duas janelas da Anthropic (5h e 7 dias).
+  await expect(stats.locator(".stats-live-badge")).toContainText("Ao vivo");
+  await expect(stats.locator(".stats-hero")).toBeVisible();
+  await expect(stats.locator(".stats-janela")).toHaveCount(2);
+  // O countdown do mock é 3h24min a partir da consulta; o relógio anda com o
+  // painel aberto, então a asserção aceita qualquer minutos de hora em hora.
+  await expect(stats.locator(".stats-janela-reset").first()).toContainText(
+    /reseta em \d+h \d+min/,
+  );
+
+  // O botão de consultar de novo fica na cabeça da seção.
+  await expect(stats.getByRole("button", { name: /Atualizar/ })).toBeVisible();
+});
+
 test("o painel de atualizações abre pela paleta e fecha com Esc", async ({ page }) => {
   await page.keyboard.press("Control+Shift+P");
   await page.locator(".palette-input").fill("atualiza");

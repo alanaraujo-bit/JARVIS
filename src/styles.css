@@ -2029,81 +2029,237 @@ body {
 
 /* ---------------------- cota real do Claude Code ---------------------- */
 
-.stats-cota-list {
+/* Cabeçalho da seção: título + badge de origem + hora da consulta + botão
+   de atualizar numa linha só. O h3 herda o estilo da seção; aqui ele perde
+   a margem e o padding passa para a linha inteira. */
+.stats-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) 0 var(--space-5);
+}
+
+.stats-section-head h3 {
+  margin: 0;
+  flex: none;
+}
+
+/* "Ao vivo": de onde vêm os percentuais. O ponto pulsa para o olho saber
+   que é um dado consultado agora e não um número fixo. */
+.stats-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--ok-quiet);
+  color: var(--ok);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.stats-live-badge .stats-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+  animation: jarvis-pulse 2.4s var(--ease-fluid) infinite;
+}
+
+/* Sem cota ao vivo (sem login/offline): o badge desliga a cor e a pulsação. */
+.stats-live-badge.sem-ao-vivo {
+  background: var(--surface-3);
+  color: var(--text-faint);
+}
+
+.stats-live-badge.sem-ao-vivo .stats-live-dot {
+  animation: none;
+}
+
+.stats-atualizado {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stats-refresh {
+  margin-left: auto;
+  flex: none;
+}
+
+.stats-refresh-spin {
+  animation: jarvis-spin 0.9s linear infinite;
+}
+
+/* Cartão em destaque da cota da conta ativa. O fundo em gradiente sutil o
+   separa da lista de cartões abaixo sem competir com eles. */
+.stats-hero {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   margin-bottom: var(--space-5);
+  padding: var(--space-5);
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
 }
 
-.stats-cota {
+.stats-hero-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.stats-hero-title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-strong);
+}
+
+/* Pílula do estado da cota: cor E texto (quem não distingue cor não perde
+   a informação). */
+.stats-chip-estado {
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.stats-chip-estado.tom-ok {
+  background: var(--ok-quiet);
+  color: var(--ok);
+}
+
+.stats-chip-estado.tom-atencao {
+  background: var(--warn-quiet);
+  color: var(--warn);
+}
+
+.stats-chip-estado.tom-alta {
+  background: var(--danger-quiet);
+  color: var(--danger);
+}
+
+.stats-janela {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-5);
-  background: var(--surface-2);
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  transition:
-    border-color var(--dur-fast) var(--ease-fluid),
-    background-color var(--dur-fast) var(--ease-fluid);
 }
 
-/* Estado em cor E em texto (ver `.stats-cota-reset`): a cor nunca é a
-   única pista para quem não a distingue. */
-.stats-cota.cota-atencao {
-  border-color: var(--warn);
-  background: var(--warn-quiet);
-}
-
-.stats-cota.cota-alta {
-  border-color: var(--danger);
-  background: var(--danger-quiet);
-}
-
-.stats-cota-top {
+.stats-janela-top {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-4);
 }
 
-.stats-cota-rotulo {
+.stats-janela-rotulo {
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
 
-.stats-cota-pct {
+.stats-janela-pct {
   font-size: var(--text-lg);
   font-weight: var(--weight-strong);
   font-variant-numeric: tabular-nums;
 }
 
-.stats-cota-track {
-  height: 6px;
+.stats-janela-pct.pct-atencao {
+  color: var(--warn);
+}
+
+.stats-janela-pct.pct-alta {
+  color: var(--danger);
+}
+
+.stats-janela-track {
+  height: 8px;
   background: var(--surface-1);
   border-radius: var(--radius-full);
   overflow: hidden;
 }
 
-.stats-cota-fill {
+.stats-janela-fill {
   height: 100%;
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
   border-radius: var(--radius-full);
   transition: width var(--dur-normal) var(--ease-fluid);
 }
 
-.fill-atencao {
+.stats-janela-fill.fill-atencao {
   background: var(--warn);
 }
 
-.fill-alta {
+.stats-janela-fill.fill-alta {
   background: var(--danger);
 }
 
-.stats-cota-reset {
+/* Countdown em negrito + horário absoluto ao lado: quanto falta E quando. */
+.stats-janela-reset {
   font-size: var(--text-xs);
   color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-janela-reset strong {
+  color: var(--text-muted);
+  font-weight: var(--weight-medium);
+}
+
+.stats-creditos {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.stats-creditos-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.stats-creditos-top span:last-child {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Erro da cota ao vivo: faixa visível, não um texto que se perde na nota. */
+.stats-live-erro {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: var(--danger-quiet);
+  border: var(--border-width) solid var(--danger);
+  border-radius: var(--radius-md);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+@keyframes jarvis-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes jarvis-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .stats-claude-models {
@@ -3355,20 +3511,99 @@ select {
 .stats-conta-cota {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   padding-top: var(--space-3);
   border-top: var(--border-width) solid var(--border-subtle);
 }
 
-.stats-conta-cota-info {
+/* Plano (pro, max…) como pastilha discreta ao lado do nome. */
+.stats-conta-plano {
+  flex: none;
+  padding: 2px var(--space-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Estado do login/cota da conta. O texto acompanha a cor: o cartão avisa
+   "Sessão expirada" em vermelho, nunca só um quadradinho vermelho. */
+.stats-pill {
+  flex: none;
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.stats-pill-ok {
+  background: var(--ok-quiet);
+  color: var(--ok);
+}
+
+.stats-pill-danger {
+  background: var(--danger-quiet);
+  color: var(--danger);
+}
+
+.stats-pill-muted {
+  background: var(--surface-3);
+  color: var(--text-faint);
+}
+
+/* Três métricas locais (tokens/custo) alinhadas em coluna, separadas do
+   resto por uma régua. */
+.stats-conta-metricas {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.stats-conta-metrica {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.stats-conta-metrica small {
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+/* Janela compacta dos cartões de conta. */
+.stats-mini-janela {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.stats-mini-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.stats-mini-top span:last-child {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-medium);
+}
+
+.stats-mini-reset {
   font-size: var(--text-xs);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
-}
-
-.texto-alta {
-  color: var(--danger) !important;
-  font-weight: var(--weight-medium);
 }
 
 .stats-conta-nome {
@@ -3382,24 +3617,6 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.stats-conta-valor {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 1px;
-  font-size: var(--text-sm);
-  /* Tabular para as três colunas não dançarem na horizontal quando um
-     número ganha um dígito. */
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-
-.stats-conta-valor small {
-  font-size: var(--text-xs);
-  font-weight: 400;
-  color: var(--text-faint);
 }
 
 .stats-conta-vazia {

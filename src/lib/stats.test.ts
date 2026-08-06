@@ -4,9 +4,13 @@ import type { SessionInfo } from "./ipc";
 import {
   COTA_ALERTA_PCT,
   computeStats,
+  estadoCota,
   formatBytes,
   formatCountdown,
   formatDuration,
+  formatFaltaSegundos,
+  formatResetAbsoluto,
+  pctDeUso,
   tomCota,
 } from "./stats";
 
@@ -143,5 +147,79 @@ describe("tomCota", () => {
     expect(tomCota(0)).toBe("ok");
     expect(tomCota(59.9)).toBe("ok");
     expect(tomCota(60)).toBe("atencao");
+  });
+});
+
+describe("formatFaltaSegundos", () => {
+  it("mostra segundos — a precisão que o painel aberto precisa", () => {
+    expect(formatFaltaSegundos(45_000, 0)).toBe("45s");
+    expect(formatFaltaSegundos(90_000, 0)).toBe("1min 30s");
+    expect(formatFaltaSegundos(3_600_000 + 14 * 60_000 + 58_000, 0)).toBe("1h 14min 58s");
+  });
+
+  it("acima de um dia larga os segundos e mostra dias e horas", () => {
+    expect(formatFaltaSegundos(5 * 86_400_000 + 14 * 3_600_000, 0)).toBe("5d 14h");
+    // Sem horas quebradas, "2d" — nunca "2d 0h".
+    expect(formatFaltaSegundos(2 * 86_400_000, 0)).toBe("2d");
+  });
+
+  it("janela vencida ou inválida vira 'agora'", () => {
+    expect(formatFaltaSegundos(10_000, 50_000)).toBe("agora");
+    expect(formatFaltaSegundos(NaN, 0)).toBe("agora");
+  });
+});
+
+describe("formatResetAbsoluto", () => {
+  // Meio-dia de 06/08/2026 (quinta), horário local da máquina de teste.
+  const agora = new Date(2026, 7, 6, 12, 0).getTime();
+
+  it("diz 'hoje' quando o reset é no mesmo dia", () => {
+    expect(formatResetAbsoluto(new Date(2026, 7, 6, 15, 19).getTime(), agora)).toBe(
+      "hoje às 15:19",
+    );
+  });
+
+  it("diz 'amanhã' no dia seguinte", () => {
+    expect(formatResetAbsoluto(new Date(2026, 7, 7, 0, 59).getTime(), agora)).toBe(
+      "amanhã às 00:59",
+    );
+  });
+
+  it("mostra a data para resets mais distantes, com ano só se mudar", () => {
+    expect(formatResetAbsoluto(new Date(2026, 7, 12, 3, 59).getTime(), agora)).toBe(
+      "12/08 às 03:59",
+    );
+    expect(formatResetAbsoluto(new Date(2027, 0, 2, 8, 0).getTime(), agora)).toBe(
+      "02/01/2027 às 08:00",
+    );
+  });
+
+  it("timestamp inválido vira travessão", () => {
+    expect(formatResetAbsoluto(NaN, agora)).toBe("—");
+  });
+});
+
+describe("estadoCota", () => {
+  it("100% é 'Esgotada', não 'Quase no limite'", () => {
+    expect(estadoCota(100)).toEqual({ tom: "alta", rotulo: "Esgotada" });
+  });
+
+  it("cobre as três faixas com os rótulos certos", () => {
+    expect(estadoCota(0)).toEqual({ tom: "ok", rotulo: "Folga" });
+    expect(estadoCota(70)).toEqual({ tom: "atencao", rotulo: "Atenção" });
+    expect(estadoCota(85)).toEqual({ tom: "alta", rotulo: "Quase no limite" });
+  });
+});
+
+describe("pctDeUso", () => {
+  it("divide usado pelo limite e prende em 0–100", () => {
+    expect(pctDeUso(25, 100)).toBe(25);
+    expect(pctDeUso(150, 100)).toBe(100);
+    expect(pctDeUso(-5, 100)).toBe(0);
+  });
+
+  it("limite inválido ou zero vira 0", () => {
+    expect(pctDeUso(10, 0)).toBe(0);
+    expect(pctDeUso(10, NaN)).toBe(0);
   });
 });

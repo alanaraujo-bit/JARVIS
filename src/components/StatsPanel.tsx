@@ -23,11 +23,14 @@ import {
 } from "../lib/ipc";
 import { useAccountStore } from "../stores/accountStore";
 import {
-  COTA_ALERTA_PCT,
   computeStats,
+  estadoCota,
   formatBytes,
   formatCountdown,
   formatDuration,
+  formatFaltaSegundos,
+  formatResetAbsoluto,
+  pctDeUso,
   tomCota,
 } from "../lib/stats";
 import { ClaudeConfigForm } from "./ClaudeConfigForm";
@@ -47,6 +50,14 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+function horaDe(ts: number): string {
+  return new Date(ts).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 interface Props {
@@ -83,6 +94,10 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
   /* --------------------------- uso do Claude Code ------------------------ */
   const [claude, setClaude] = useState<ClaudeUsageSummary | null>(null);
   const [claudeErro, setClaudeErro] = useState<string | null>(null);
+  /** Consulta em andamento: gira o ícone de atualizar e segura o "atualizado às". */
+  const [claudeCarregando, setClaudeCarregando] = useState(false);
+  /** Quando a última consulta terminou, para o "atualizado às HH:MM:SS". */
+  const [atualizadoEm, setAtualizadoEm] = useState<number | null>(null);
 
   // Ignora uma resposta que chegue depois de outra mais nova (painel fechado
   // e reaberto rápido o bastante pra dois `claudeUsageSummary()` se
@@ -114,28 +129,50 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
 
   const carregarClaude = useCallback(() => {
     const minha = ++requisicaoRef.current;
+    setClaudeCarregando(true);
+
+    // Cada consulta é independente e o `agora` do painel não depende delas;
+    // o "carregando" e o "atualizado às" esperam a última terminar, seja
+    // qual for. Sem a contagem, uma resposta rápida apagaria o carregando
+    // enquanto a consulta lenta (a varredura local) ainda roda.
+    let pendentes = 0;
+    const abreUma = () => {
+      pendentes++;
+      return () => {
+        pendentes--;
+        if (pendentes === 0 && requisicaoRef.current === minha) {
+          setClaudeCarregando(false);
+          setAtualizadoEm(Date.now());
+        }
+      };
+    };
 
     const pares = contas
       .map((c) => [c.id, statusContas[c.id]?.configDir] as const)
       .filter((p): p is readonly [string, string] => !!p[1]);
     if (pares.length > 0) {
+      const fimA = abreUma();
       void claudeUsageByAccount(pares.map(([id, dir]) => [id, dir]))
         .then((lista) => {
           if (requisicaoRef.current === minha) setPorConta(lista);
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(fimA);
       // Cota real por conta: roda junto com a varredura local, com a mesma
       // proteção contra resposta fora de ordem.
+      const fimB = abreUma();
       void claudeUsageLiveByAccount(pares.map(([id, dir]) => [id, dir]))
         .then((lista) => {
           if (requisicaoRef.current === minha) setLivePorConta(lista);
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(fimB);
     } else {
       setPorConta([]);
       setLivePorConta([]);
     }
 
+    const fimC = abreUma();
     void claudeUsageSummary(dirDoFormulario)
       .then((s) => {
         if (requisicaoRef.current !== minha) return;
@@ -145,13 +182,16 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
       .catch((e) => {
         if (requisicaoRef.current !== minha) return;
         setClaudeErro(String(e));
-      });
+      })
+      .finally(fimC);
 
+    const fimD = abreUma();
     void claudeUsageLive(dirDoFormulario)
       .then((u) => {
         if (requisicaoRef.current === minha) setLive(u);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(fimD);
   }, [contas, statusContas, dirDoFormulario]);
 
   useEffect(() => {
@@ -162,6 +202,10 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
   // `sessions / maiorUso` dava 100% para todo mundo, e a barra virava um
   // enfeite sem relação com o "1.2 KB" escrito do lado.
   const maiorUso = Math.max(0, ...stats.byShell.map((g) => g.bytesOut));
+
+  // O estado da cota da janela de 5h comanda o cartão em destaque; calculado
+  // uma vez em vez de duas dentro do JSX.
+  const heroEstado = live?.fiveHour ? estadoCota(live.fiveHour.utilizationPct) : null;
 
   if (!open) return null;
 
@@ -227,101 +271,88 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
           ))}
         </div>
 
-        {porConta.length > 0 && (
-          <div className="stats-section">
-            <h3>Uso por conta do Claude Code</h3>
-            <div className="stats-contas">
-              {porConta.map((u) => {
-                const conta = contas.find((c) => c.id === u.accountId);
-                if (!conta) return null;
-                const liveC = livePorConta.find((l) => l.accountId === u.accountId)?.usage ?? null;
-                const cota = liveC?.available ? liveC.fiveHour : null;
-                const tom = cota ? tomCota(cota.utilizationPct) : null;
-                return (
-                  <div
-                    key={u.accountId}
-                    className={`stats-conta ${tom === "alta" ? "stats-conta-alta" : ""}`}
-                  >
-                    <div className="stats-conta-top">
-                      <span className="stats-conta-nome">
-                        <span className="accounts-dot" style={{ background: conta.color }} />
-                        {conta.name}
-                      </span>
-                      {u.summary.noData ? (
-                        <span className="stats-conta-vazia">sem uso registrado</span>
-                      ) : (
-                        <>
-                          <span className="stats-conta-valor">
-                            {formatTokens(u.summary.tokensLast5h)}
-                            <small>tokens em 5h</small>
-                          </span>
-                          <span className="stats-conta-valor">
-                            {formatTokens(u.summary.tokensLast24h)}
-                            <small>em 24h</small>
-                          </span>
-                          <span className="stats-conta-valor">
-                            {formatUsd(u.summary.costLast5hUsd)}
-                            <small>custo em 5h</small>
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    {cota && (
-                      <div className="stats-conta-cota">
-                        <div className="stats-cota-track">
-                          <div
-                            className={`stats-cota-fill ${
-                              tom === "alta"
-                                ? "fill-alta"
-                                : tom === "atencao"
-                                  ? "fill-atencao"
-                                  : ""
-                            }`}
-                            style={{ width: `${Math.min(100, cota.utilizationPct)}%` }}
-                          />
-                        </div>
-                        <span
-                          className={`stats-conta-cota-info ${tom === "alta" ? "texto-alta" : ""}`}
-                        >
-                          {cota.utilizationPct.toFixed(0)}% da janela de 5h · reseta em{" "}
-                          {formatCountdown(cota.resetsAtMs, agora)}
-                        </span>
-                      </div>
-                    )}
-                    {liveC && !liveC.available && liveC.error && (
-                      <span className="stats-conta-vazia" title={liveC.error}>
-                        cota ao vivo indisponível
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <p className="stats-note stats-note-tight">
-              Com login, o percentual acima vem da própria Anthropic — a mesma fonte do{" "}
-              <code>/usage</code> da CLI. Tokens e custo continuam sendo estimados do histórico
-              local e não são o contador oficial.
-            </p>
-          </div>
-        )}
-
         <div className="stats-section">
-          <h3>{porConta.length > 0 ? "Configuração do Claude Code" : "Claude Code"}</h3>
+          <div className="stats-section-head">
+            <h3>Uso do Claude Code</h3>
+            <span
+              className={`stats-live-badge ${live?.available ? "" : "sem-ao-vivo"}`}
+              title={
+                live?.available
+                  ? "Percentuais consultados na Anthropic com o login local do Claude Code — a mesma fonte do /usage da CLI."
+                  : "Sem cota ao vivo — mostrando a estimativa local do histórico."
+              }
+            >
+              <span className="stats-live-dot" />
+              {live?.available
+                ? "Ao vivo"
+                : // Antes da primeira resposta o badge não pode apostar em
+                  // "Estimativa local" — a consulta à Anthropic ainda está no ar.
+                  live === null && claudeCarregando
+                  ? "Consultando…"
+                  : "Estimativa local"}
+            </span>
+            {atualizadoEm && (
+              <span className="stats-atualizado">atualizado às {horaDe(atualizadoEm)}</span>
+            )}
+            <button
+              className="chip subtle stats-refresh"
+              onClick={() => void carregarClaude()}
+              disabled={claudeCarregando}
+              title="Consultar a cota na Anthropic de novo"
+              aria-label="Atualizar cota do Claude Code"
+            >
+              <Icon
+                name="refresh"
+                size={12}
+                className={claudeCarregando ? "stats-refresh-spin" : undefined}
+              />
+              Atualizar
+            </button>
+          </div>
 
-          {live?.available && (live.fiveHour || live.sevenDay) && (
-            <div className="stats-cota-list">
-              {live.fiveHour && (
-                <BarraCota janela={live.fiveHour} rotulo="Cota · janela de 5h" agora={agora} />
-              )}
-              {live.sevenDay && (
-                <BarraCota janela={live.sevenDay} rotulo="Cota · janela de 7 dias" agora={agora} />
-              )}
+          {claudeCarregando && !live && !claude && (
+            <p className="stats-empty">Consultando a cota na Anthropic…</p>
+          )}
+
+          {live?.available && (
+            <div className="stats-hero">
+              <div className="stats-hero-head">
+                <span className="stats-hero-title">Sua cota</span>
+                {heroEstado && (
+                  <span className={`stats-chip-estado tom-${heroEstado.tom}`}>
+                    {heroEstado.rotulo}
+                  </span>
+                )}
+              </div>
+              <JanelaGrande rotulo="Janela de 5 horas" janela={live.fiveHour} agora={agora} />
+              <JanelaGrande rotulo="Janela de 7 dias" janela={live.sevenDay} agora={agora} />
+              {live.extraUsage?.isEnabled && live.extraUsage.monthlyLimit ? (
+                <div className="stats-creditos">
+                  <div className="stats-creditos-top">
+                    <span>Créditos extras · mês</span>
+                    <span>
+                      {formatUsd(live.extraUsage.usedCredits ?? 0)} de{" "}
+                      {formatUsd(live.extraUsage.monthlyLimit)}
+                    </span>
+                  </div>
+                  <div className="stats-janela-track">
+                    <div
+                      className="stats-janela-fill fill-atencao"
+                      style={{
+                        width: `${pctDeUso(live.extraUsage.usedCredits ?? 0, live.extraUsage.monthlyLimit)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
+
           {live && !live.available && live.error && (
-            <p className="stats-note stats-note-tight">
-              Cota ao vivo indisponível: {live.error}
-            </p>
+            <div className="stats-live-erro">
+              <Icon name="warning" size={14} />
+              <span>{live.error} — os números abaixo são a estimativa local.</span>
+            </div>
           )}
 
           {claudeErro && <p className="stats-empty">Não foi possível ler o uso local: {claudeErro}</p>}
@@ -373,6 +404,98 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
           </p>
         </div>
 
+        {porConta.length > 0 && (
+          <div className="stats-section">
+            <h3>Uso por conta do Claude Code</h3>
+            <div className="stats-contas">
+              {porConta.map((u) => {
+                const conta = contas.find((c) => c.id === u.accountId);
+                if (!conta) return null;
+                const status = statusContas[u.accountId];
+                const liveC = livePorConta.find((l) => l.accountId === u.accountId)?.usage ?? null;
+                // O tom do cartão segue a pior das duas janelas: uma conta em
+                // 40% na janela de 7 dias mas 95% na de 5h não pode parecer
+                // tranquila.
+                const pior = [liveC?.fiveHour, liveC?.sevenDay]
+                  .filter((w): w is ClaudeWindowUsage => !!w)
+                  .reduce<ClaudeWindowUsage | null>(
+                    (a, b) => (b.utilizationPct > (a?.utilizationPct ?? -1) ? b : a),
+                    null,
+                  );
+                const tom = pior ? tomCota(pior.utilizationPct) : null;
+                // Sem resposta ainda (liveC nulo) o cartão não aposta em
+                // "Sessão expirada": falta de dado não é falha.
+                const pill =
+                  liveC === null
+                    ? null
+                    : !status?.loggedIn
+                      ? { cls: "muted", txt: "Sem login" }
+                      : liveC.available
+                        ? { cls: "ok", txt: "Ao vivo" }
+                        : { cls: "danger", txt: "Sessão expirada" };
+                return (
+                  <div
+                    key={u.accountId}
+                    className={`stats-conta ${tom === "alta" ? "stats-conta-alta" : ""}`}
+                  >
+                    <div className="stats-conta-top">
+                      <span className="stats-conta-nome">
+                        <span className="accounts-dot" style={{ background: conta.color }} />
+                        {conta.name}
+                      </span>
+                      {status?.subscriptionType && (
+                        <span className="stats-conta-plano">{status.subscriptionType}</span>
+                      )}
+                      {pill && (
+                        <span className={`stats-pill stats-pill-${pill.cls}`}>{pill.txt}</span>
+                      )}
+                    </div>
+
+                    {liveC?.available && (
+                      <div className="stats-conta-cota">
+                        <MiniJanela rotulo="Janela de 5h" janela={liveC.fiveHour} agora={agora} />
+                        <MiniJanela rotulo="Janela de 7 dias" janela={liveC.sevenDay} agora={agora} />
+                      </div>
+                    )}
+                    {liveC && !liveC.available && liveC.error && (
+                      <span className="stats-conta-vazia" title={liveC.error}>
+                        cota ao vivo indisponível —{" "}
+                        {status?.loggedIn
+                          ? "sessão expirada (rode /login nesta conta)"
+                          : "sem login salvo"}
+                      </span>
+                    )}
+
+                    {u.summary.noData ? (
+                      <span className="stats-conta-vazia">sem uso registrado</span>
+                    ) : (
+                      <div className="stats-conta-metricas">
+                        <span className="stats-conta-metrica">
+                          {formatTokens(u.summary.tokensLast5h)}
+                          <small>tokens · 5h</small>
+                        </span>
+                        <span className="stats-conta-metrica">
+                          {formatTokens(u.summary.tokensLast24h)}
+                          <small>tokens · 24h</small>
+                        </span>
+                        <span className="stats-conta-metrica">
+                          {formatUsd(u.summary.costLast5hUsd)}
+                          <small>custo · 5h (est.)</small>
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="stats-note stats-note-tight">
+              Com login, o percentual acima vem da própria Anthropic — a mesma fonte do{" "}
+              <code>/usage</code> da CLI. Tokens e custo continuam sendo estimados do histórico
+              local e não são o contador oficial.
+            </p>
+          </div>
+        )}
+
         <p className="stats-note">
           Os contadores valem para esta execução do JARVIS — eles zeram quando o aplicativo
           é fechado.
@@ -392,39 +515,79 @@ function Cartao({ rotulo, valor }: { rotulo: string; valor: string }) {
 }
 
 /**
- * Barra de cota de uma janela da Anthropic: percentual usado + quando zera.
- * O tom acompanha o estado — atenção a partir de 60%, alerta no limite
- * `COTA_ALERTA_PCT` — para a cor sozinha não ser a única pista.
+ * Janela de cota em destaque, com contagem regressiva em segundos: o relógio
+ * anda enquanto o painel está aberto. O horário absoluto do reset fica ao
+ * lado do countdown — um diz quanto falta, o outro diz quando.
  */
-function BarraCota({
-  janela,
+function JanelaGrande({
   rotulo,
+  janela,
   agora,
 }: {
-  janela: ClaudeWindowUsage;
   rotulo: string;
+  janela: ClaudeWindowUsage | null;
   agora: number;
 }) {
-  const tom = tomCota(janela.utilizationPct);
+  if (!janela) return null;
+  const est = estadoCota(janela.utilizationPct);
+  const pctCls = est.tom === "alta" ? "pct-alta" : est.tom === "atencao" ? "pct-atencao" : "";
   return (
-    <div
-      className={`stats-cota ${
-        tom === "alta" ? "cota-alta" : tom === "atencao" ? "cota-atencao" : ""
-      }`}
-    >
-      <div className="stats-cota-top">
-        <span className="stats-cota-rotulo">{rotulo}</span>
-        <span className="stats-cota-pct">{janela.utilizationPct.toFixed(0)}%</span>
+    <div className="stats-janela">
+      <div className="stats-janela-top">
+        <span className="stats-janela-rotulo">{rotulo}</span>
+        <span className={`stats-janela-pct ${pctCls}`}>{janela.utilizationPct.toFixed(0)}%</span>
       </div>
-      <div className="stats-cota-track">
+      <div className="stats-janela-track">
         <div
-          className="stats-cota-fill"
+          className={`stats-janela-fill ${
+            est.tom === "alta" ? "fill-alta" : est.tom === "atencao" ? "fill-atencao" : ""
+          }`}
           style={{ width: `${Math.min(100, janela.utilizationPct)}%` }}
         />
       </div>
-      <span className="stats-cota-reset">
-        {janela.utilizationPct >= COTA_ALERTA_PCT && "Cota quase no limite — "}
-        reseta em {formatCountdown(janela.resetsAtMs, agora)}
+      <span className="stats-janela-reset">
+        reseta em <strong>{formatFaltaSegundos(janela.resetsAtMs, agora)}</strong>
+        <span className="stats-janela-reset-abs">
+          {" "}
+          · {formatResetAbsoluto(janela.resetsAtMs, agora)}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Janela compacta para os cartões de conta: a mesma informação do hero, no
+ * espaço de meia linha.
+ */
+function MiniJanela({
+  rotulo,
+  janela,
+  agora,
+}: {
+  rotulo: string;
+  janela: ClaudeWindowUsage | null;
+  agora: number;
+}) {
+  if (!janela) return null;
+  const tom = tomCota(janela.utilizationPct);
+  const pctCls = tom === "alta" ? "pct-alta" : tom === "atencao" ? "pct-atencao" : "";
+  return (
+    <div className="stats-mini-janela">
+      <div className="stats-mini-top">
+        <span>{rotulo}</span>
+        <span className={pctCls}>{janela.utilizationPct.toFixed(0)}%</span>
+      </div>
+      <div className="stats-janela-track">
+        <div
+          className={`stats-janela-fill ${
+            tom === "alta" ? "fill-alta" : tom === "atencao" ? "fill-atencao" : ""
+          }`}
+          style={{ width: `${Math.min(100, janela.utilizationPct)}%` }}
+        />
+      </div>
+      <span className="stats-mini-reset">
+        {formatCountdown(janela.resetsAtMs, agora)} · {formatResetAbsoluto(janela.resetsAtMs, agora)}
       </span>
     </div>
   );
