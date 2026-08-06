@@ -497,6 +497,52 @@ export interface ClaudeAccountUsage {
   summary: ClaudeUsageSummary;
 }
 
+/* --------------------- cota real (API da Anthropic) -------------------- */
+
+/** Uma janela de cota da resposta da Anthropic (o `/usage` da CLI). */
+export interface ClaudeWindowUsage {
+  /** Percentual da janela já consumido (0–100). */
+  utilizationPct: number;
+  /** Epoch em ms em que a janela zera. */
+  resetsAtMs: number;
+}
+
+export interface ClaudeExtraUsage {
+  isEnabled: boolean;
+  monthlyLimit: number | null;
+  usedCredits: number | null;
+  utilization: number | null;
+}
+
+/**
+ * Cota real de uma configuração. `available: false` não é erro — é o sinal
+ * de que não dá para saber a cota agora (sem login, offline) e a interface
+ * deve mostrar a estimativa local. Nunca traz token nenhum.
+ */
+export interface ClaudeLiveUsage {
+  available: boolean;
+  error: string | null;
+  fiveHour: ClaudeWindowUsage | null;
+  sevenDay: ClaudeWindowUsage | null;
+  extraUsage: ClaudeExtraUsage | null;
+}
+
+export interface ClaudeAccountLiveUsage {
+  accountId: string;
+  usage: ClaudeLiveUsage;
+}
+
+/**
+ * Cota real da conta (ou da configuração principal, sem `configDir`),
+ * consultada na Anthropic com o token OAuth que o Claude Code já salva.
+ */
+export const claudeUsageLive = (configDir?: string) =>
+  invoke<ClaudeLiveUsage>("claude_usage_live", { configDir });
+
+/** Cota ao vivo de várias contas numa chamada só, como o `claudeUsageByAccount`. */
+export const claudeUsageLiveByAccount = (accounts: [string, string][]) =>
+  invoke<ClaudeAccountLiveUsage[]>("claude_usage_live_by_account", { accounts });
+
 /** Cria a pasta da conta. `seed` copia `settings.json`/`CLAUDE.md` de `~/.claude`. */
 export const claudeAccountPrepare = (id: string, seed: boolean) =>
   invoke<string>("claude_account_prepare", { id, seed });

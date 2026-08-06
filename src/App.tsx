@@ -42,6 +42,7 @@ import { contaDoConfigDir } from "./lib/agentResume";
 import {
   agentResumeProbe,
   appHomeDir,
+  claudeUsageLive,
   configLoad,
   configSave,
   onPtyExit,
@@ -57,6 +58,7 @@ import {
   type ShellProfile,
   type TranscriptMeta,
 } from "./lib/ipc";
+import { COTA_ALERTA_PCT, formatCountdown } from "./lib/stats";
 import {
   closePane as closePaneInTree,
   findLeaf,
@@ -165,6 +167,7 @@ export default function App() {
   const setOnboardingDone = useUiStore((s) => s.setOnboardingDone);
 
   const contas = useAccountStore((s) => s.contas);
+  const statusContas = useAccountStore((s) => s.status);
   const contaEscolhidaId = useAccountStore((s) => s.escolhidaId);
   const contaPadraoId = useAccountStore((s) => s.padraoId);
   const contasPainelAberto = useAccountStore((s) => s.painelAberto);
@@ -1645,6 +1648,39 @@ export default function App() {
     [contas],
   );
 
+  /**
+   * Alerta de cota na barra superior: consulta a janela de 5h da conta
+   * ativa (a mesma fonte do `/usage` da CLI) de tempos em tempos e acende o
+   * badge quando ela passa de 80%. Sem login, o backend responde
+   * `available: false` sem tocar na rede — o polling fica barato.
+   */
+  const [cotaAlta, setCotaAlta] = useState(false);
+  const [cotaInfo, setCotaInfo] = useState<{ pct: number; resetsAtMs: number } | null>(null);
+
+  useEffect(() => {
+    const verifica = async () => {
+      // Janela minimizada ou em segundo plano: a cota não muda aqui, e
+      // poupar a consulta (que é de rede quando há login) é o comportamento
+      // educado — o próximo tique já reavalia quando ela voltar a aparecer.
+      if (document.hidden) return;
+      const dir = contaAtiva ? statusContas[contaAtiva.id]?.configDir : undefined;
+      try {
+        const u = await claudeUsageLive(dir);
+        const cota = u.available && u.fiveHour ? u.fiveHour : null;
+        setCotaAlta(!!cota && cota.utilizationPct >= COTA_ALERTA_PCT);
+        setCotaInfo(
+          cota ? { pct: cota.utilizationPct, resetsAtMs: cota.resetsAtMs } : null,
+        );
+      } catch {
+        setCotaAlta(false);
+        setCotaInfo(null);
+      }
+    };
+    void verifica();
+    const t = window.setInterval(verifica, 300_000);
+    return () => window.clearInterval(t);
+  }, [contaAtiva, statusContas]);
+
   // As duas listas que a barra de abas desenha. Todas as abas continuam
   // montadas mais abaixo — isto aqui separa só quem aparece onde.
   const abasVisiveis = useMemo(() => filtraVisiveis(tabs), [tabs]);
@@ -1705,7 +1741,7 @@ export default function App() {
             não teria o que informar. */}
         {contaAtiva && (
           <button
-            className="ws-badge account-badge"
+            className={`ws-badge account-badge ${cotaAlta ? "account-badge-alta" : ""}`}
             onClick={() => {
               setPaletteOpen(false);
               setStatsOpen(false);
@@ -1713,13 +1749,24 @@ export default function App() {
               abrirPainelContas();
             }}
             title={
-              contaEscolhidaId
-                ? `Próximos terminais na conta ${contaAtiva.name} (escolha manual)`
-                : `Próximos terminais na conta ${contaAtiva.name}`
+              cotaAlta && cotaInfo
+                ? `${contaAtiva.name}: cota a ${cotaInfo.pct.toFixed(0)}% da janela de 5h — reseta em ${formatCountdown(cotaInfo.resetsAtMs)}. Clique para abrir as contas.`
+                : contaEscolhidaId
+                  ? `Próximos terminais na conta ${contaAtiva.name} (escolha manual)`
+                  : `Próximos terminais na conta ${contaAtiva.name}`
             }
           >
             <span className="ws-badge-dot" style={{ background: contaAtiva.color }} />
             {contaAtiva.name}
+            {cotaAlta && (
+              <span
+                className="account-badge-warn"
+                role="img"
+                aria-label={`cota quase no limite (${cotaInfo?.pct.toFixed(0)}%)`}
+              >
+                !
+              </span>
+            )}
             {contaEscolhidaId && <span className="account-badge-pin">•</span>}
           </button>
         )}

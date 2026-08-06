@@ -372,6 +372,24 @@ pub fn claude_usage_by_account(
     crate::claude_usage::summarize_accounts(&accounts)
 }
 
+/// Cota real (janelas de 5h/7d e o momento do reset) consultada na Anthropic
+/// — o que o `/usage` da CLI mostra. Falha graciosa: offline, sem login ou
+/// token inválido vira `available: false` com mensagem amigável, e o painel
+/// cai para a estimativa local de `claude_usage_summary`.
+#[tauri::command(async)]
+pub async fn claude_usage_live(config_dir: Option<String>) -> crate::claude_usage_live::LiveUsage {
+    crate::claude_usage_live::live_usage(config_dir.as_deref()).await
+}
+
+/// Cota ao vivo de várias contas numa chamada só, como o
+/// `claude_usage_by_account` faz com a estimativa local.
+#[tauri::command(async)]
+pub async fn claude_usage_live_by_account(
+    accounts: Vec<(String, String)>,
+) -> Vec<crate::claude_usage_live::AccountLiveUsage> {
+    crate::claude_usage_live::live_for_accounts(&accounts).await
+}
+
 #[tauri::command(async)]
 pub fn claude_settings_get(config_dir: Option<String>) -> crate::claude_usage::ClaudeSettings {
     crate::claude_usage::read_settings(config_dir.as_deref())

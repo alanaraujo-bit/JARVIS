@@ -2027,6 +2027,85 @@ body {
   padding: var(--space-2) 0 0;
 }
 
+/* ---------------------- cota real do Claude Code ---------------------- */
+
+.stats-cota-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.stats-cota {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  background: var(--surface-2);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--dur-fast) var(--ease-fluid),
+    background-color var(--dur-fast) var(--ease-fluid);
+}
+
+/* Estado em cor E em texto (ver `.stats-cota-reset`): a cor nunca é a
+   única pista para quem não a distingue. */
+.stats-cota.cota-atencao {
+  border-color: var(--warn);
+  background: var(--warn-quiet);
+}
+
+.stats-cota.cota-alta {
+  border-color: var(--danger);
+  background: var(--danger-quiet);
+}
+
+.stats-cota-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.stats-cota-rotulo {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.stats-cota-pct {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-cota-track {
+  height: 6px;
+  background: var(--surface-1);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.stats-cota-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  transition: width var(--dur-normal) var(--ease-fluid);
+}
+
+.fill-atencao {
+  background: var(--warn);
+}
+
+.fill-alta {
+  background: var(--danger);
+}
+
+.stats-cota-reset {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+
 .stats-claude-models {
   margin-top: var(--space-2);
 }
@@ -3095,6 +3174,33 @@ select {
   line-height: 1;
 }
 
+/* Cota quase no limite: o distintivo da conta avisa sozinho, sem abrir
+   painel nenhum — a borda acende e um ponto vermelho pulsa ao lado do nome.
+   A animação vem de `jarvis-breathe`, que já respeita o movimento reduzido. */
+.account-badge-alta {
+  border-color: var(--danger);
+  color: var(--text);
+}
+
+.account-badge-alta:hover {
+  border-color: var(--danger);
+}
+
+.account-badge-warn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--danger);
+  color: var(--text-inverted);
+  font-size: 10px;
+  font-weight: var(--weight-strong);
+  line-height: 1;
+  animation: jarvis-breathe 2.4s var(--ease-linear) infinite;
+}
+
 /**
  * Ponto da conta na aba, ao lado do ponto do workspace.
  *
@@ -3222,11 +3328,47 @@ select {
 
 .stats-conta {
   display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface-2);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--dur-fast) var(--ease-fluid),
+    background-color var(--dur-fast) var(--ease-fluid);
+}
+
+/* Cota quase no limite: o cartão inteiro avisa, não só a barra. */
+.stats-conta-alta {
+  border-color: var(--danger);
+  background: var(--danger-quiet);
+}
+
+.stats-conta-top {
+  display: flex;
   align-items: center;
   gap: var(--space-5);
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface-2);
-  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.stats-conta-cota {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.stats-conta-cota-info {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.texto-alta {
+  color: var(--danger) !important;
+  font-weight: var(--weight-medium);
 }
 
 .stats-conta-nome {
@@ -3267,7 +3409,7 @@ select {
 
 /* Numa janela estreita as três colunas de número não cabem ao lado do nome. */
 @media (max-width: 620px) {
-  .stats-conta {
+  .stats-conta-top {
     flex-wrap: wrap;
     gap: var(--space-3);
   }

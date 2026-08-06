@@ -566,6 +566,68 @@ export function installDevMock(): void {
       }));
     },
 
+    /* ---------------- cota real (API da Anthropic, simulada) ------------ */
+    // Percentual determinístico por id: o painel precisa mostrar contas em
+    // tons diferentes — inclusive uma acima de 80% para exercitar o alerta
+    // da barra superior sem depender de sorte.
+    claude_usage_live: (args) => {
+      const { configDir } = args as unknown as { configDir?: string };
+      const id = configDir?.split("\\").pop();
+      const contas = leContasMock();
+      const logada = id ? !!contas[id]?.loggedIn : true;
+      if (!logada) {
+        return {
+          available: false,
+          error: "esta conta não tem login salvo — entre nela e rode /login",
+          fiveHour: null,
+          sevenDay: null,
+          extraUsage: null,
+        };
+      }
+      const pct = cotaMock(id);
+      return {
+        available: true,
+        error: null,
+        fiveHour: { utilizationPct: pct, resetsAtMs: Date.now() + 3 * 3_600_000 + 24 * 60_000 },
+        sevenDay: { utilizationPct: 30, resetsAtMs: Date.now() + 2 * 86_400_000 },
+        extraUsage: null,
+      };
+    },
+
+    claude_usage_live_by_account: (args) => {
+      const { accounts } = args as unknown as { accounts: [string, string][] };
+      const contas = leContasMock();
+      return accounts.map(([accountId]) => {
+        // Igual ao de verdade: sem login, `available: false` — é o que
+        // exercita o aviso "cota ao vivo indisponível" nos cartões.
+        if (!contas[accountId]?.loggedIn) {
+          return {
+            accountId,
+            usage: {
+              available: false,
+              error: "esta conta não tem login salvo — entre nela e rode /login",
+              fiveHour: null,
+              sevenDay: null,
+              extraUsage: null,
+            },
+          };
+        }
+        return {
+          accountId,
+          usage: {
+            available: true,
+            error: null,
+            fiveHour: {
+              utilizationPct: cotaMock(accountId),
+              resetsAtMs: Date.now() + 3 * 3_600_000,
+            },
+            sevenDay: { utilizationPct: 30, resetsAtMs: Date.now() + 2 * 86_400_000 },
+            extraUsage: null,
+          },
+        };
+      });
+    },
+
     open_folder_dialog: () => {
       // Sem diálogo nativo no navegador: devolve uma pasta plausível para o
       // fluxo de workspace poder ser percorrido inteiro.
@@ -617,6 +679,13 @@ export function installDevMock(): void {
 
     ai_cancel: () => null,
   };
+
+  /** 30–89%, estável para o mesmo id — o alerta de 80% dispara em algumas contas. */
+  function cotaMock(id: string | undefined): number {
+    let h = 0;
+    for (const ch of id ?? "") h = (h * 31 + ch.charCodeAt(0)) % 97;
+    return 30 + (h % 60);
+  }
 
   const internals = {
     transformCallback(cb: Handler, once = false) {

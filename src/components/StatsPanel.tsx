@@ -11,13 +11,25 @@ import { Icon } from "./Icon";
 
 import {
   claudeUsageByAccount,
+  claudeUsageLive,
+  claudeUsageLiveByAccount,
   claudeUsageSummary,
+  type ClaudeAccountLiveUsage,
   type ClaudeAccountUsage,
+  type ClaudeLiveUsage,
   type ClaudeUsageSummary,
+  type ClaudeWindowUsage,
   type SessionInfo,
 } from "../lib/ipc";
 import { useAccountStore } from "../stores/accountStore";
-import { computeStats, formatBytes, formatDuration } from "../lib/stats";
+import {
+  COTA_ALERTA_PCT,
+  computeStats,
+  formatBytes,
+  formatCountdown,
+  formatDuration,
+  tomCota,
+} from "../lib/stats";
 import { ClaudeConfigForm } from "./ClaudeConfigForm";
 
 /** Câmbio aproximado só pra dar uma ordem de grandeza em reais — não é cotação ao vivo. */
@@ -86,6 +98,10 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
   const contas = useAccountStore((s) => s.contas);
   const statusContas = useAccountStore((s) => s.status);
   const [porConta, setPorConta] = useState<ClaudeAccountUsage[]>([]);
+  /** Cota real (API da Anthropic) da configuração do formulário. */
+  const [live, setLive] = useState<ClaudeLiveUsage | null>(null);
+  /** Cota real por conta, alinhada a `porConta`. */
+  const [livePorConta, setLivePorConta] = useState<ClaudeAccountLiveUsage[]>([]);
 
   /**
    * Qual pasta de configuração o formulário de modelo/esforço lê e escreve.
@@ -108,8 +124,16 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
           if (requisicaoRef.current === minha) setPorConta(lista);
         })
         .catch(() => {});
+      // Cota real por conta: roda junto com a varredura local, com a mesma
+      // proteção contra resposta fora de ordem.
+      void claudeUsageLiveByAccount(pares.map(([id, dir]) => [id, dir]))
+        .then((lista) => {
+          if (requisicaoRef.current === minha) setLivePorConta(lista);
+        })
+        .catch(() => {});
     } else {
       setPorConta([]);
+      setLivePorConta([]);
     }
 
     void claudeUsageSummary(dirDoFormulario)
@@ -122,6 +146,12 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
         if (requisicaoRef.current !== minha) return;
         setClaudeErro(String(e));
       });
+
+    void claudeUsageLive(dirDoFormulario)
+      .then((u) => {
+        if (requisicaoRef.current === minha) setLive(u);
+      })
+      .catch(() => {});
   }, [contas, statusContas, dirDoFormulario]);
 
   useEffect(() => {
@@ -204,44 +234,95 @@ export function StatsPanel({ open, sessions, onClose }: Props) {
               {porConta.map((u) => {
                 const conta = contas.find((c) => c.id === u.accountId);
                 if (!conta) return null;
+                const liveC = livePorConta.find((l) => l.accountId === u.accountId)?.usage ?? null;
+                const cota = liveC?.available ? liveC.fiveHour : null;
+                const tom = cota ? tomCota(cota.utilizationPct) : null;
                 return (
-                  <div key={u.accountId} className="stats-conta">
-                    <span className="stats-conta-nome">
-                      <span className="accounts-dot" style={{ background: conta.color }} />
-                      {conta.name}
-                    </span>
-                    {u.summary.noData ? (
-                      <span className="stats-conta-vazia">sem uso registrado</span>
-                    ) : (
-                      <>
-                        <span className="stats-conta-valor">
-                          {formatTokens(u.summary.tokensLast5h)}
-                          <small>tokens em 5h</small>
+                  <div
+                    key={u.accountId}
+                    className={`stats-conta ${tom === "alta" ? "stats-conta-alta" : ""}`}
+                  >
+                    <div className="stats-conta-top">
+                      <span className="stats-conta-nome">
+                        <span className="accounts-dot" style={{ background: conta.color }} />
+                        {conta.name}
+                      </span>
+                      {u.summary.noData ? (
+                        <span className="stats-conta-vazia">sem uso registrado</span>
+                      ) : (
+                        <>
+                          <span className="stats-conta-valor">
+                            {formatTokens(u.summary.tokensLast5h)}
+                            <small>tokens em 5h</small>
+                          </span>
+                          <span className="stats-conta-valor">
+                            {formatTokens(u.summary.tokensLast24h)}
+                            <small>em 24h</small>
+                          </span>
+                          <span className="stats-conta-valor">
+                            {formatUsd(u.summary.costLast5hUsd)}
+                            <small>custo em 5h</small>
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    {cota && (
+                      <div className="stats-conta-cota">
+                        <div className="stats-cota-track">
+                          <div
+                            className={`stats-cota-fill ${
+                              tom === "alta"
+                                ? "fill-alta"
+                                : tom === "atencao"
+                                  ? "fill-atencao"
+                                  : ""
+                            }`}
+                            style={{ width: `${Math.min(100, cota.utilizationPct)}%` }}
+                          />
+                        </div>
+                        <span
+                          className={`stats-conta-cota-info ${tom === "alta" ? "texto-alta" : ""}`}
+                        >
+                          {cota.utilizationPct.toFixed(0)}% da janela de 5h · reseta em{" "}
+                          {formatCountdown(cota.resetsAtMs, agora)}
                         </span>
-                        <span className="stats-conta-valor">
-                          {formatTokens(u.summary.tokensLast24h)}
-                          <small>em 24h</small>
-                        </span>
-                        <span className="stats-conta-valor">
-                          {formatUsd(u.summary.costLast5hUsd)}
-                          <small>custo em 5h</small>
-                        </span>
-                      </>
+                      </div>
+                    )}
+                    {liveC && !liveC.available && liveC.error && (
+                      <span className="stats-conta-vazia" title={liveC.error}>
+                        cota ao vivo indisponível
+                      </span>
                     )}
                   </div>
                 );
               })}
             </div>
             <p className="stats-note stats-note-tight">
-              A janela de 5h é a aproximação mais próxima do limite da Anthropic que dá para
-              calcular só com o que fica gravado no disco — não é o contador oficial, e sim o
-              volume que cada conta consumiu no período.
+              Com login, o percentual acima vem da própria Anthropic — a mesma fonte do{" "}
+              <code>/usage</code> da CLI. Tokens e custo continuam sendo estimados do histórico
+              local e não são o contador oficial.
             </p>
           </div>
         )}
 
         <div className="stats-section">
           <h3>{porConta.length > 0 ? "Configuração do Claude Code" : "Claude Code"}</h3>
+
+          {live?.available && (live.fiveHour || live.sevenDay) && (
+            <div className="stats-cota-list">
+              {live.fiveHour && (
+                <BarraCota janela={live.fiveHour} rotulo="Cota · janela de 5h" agora={agora} />
+              )}
+              {live.sevenDay && (
+                <BarraCota janela={live.sevenDay} rotulo="Cota · janela de 7 dias" agora={agora} />
+              )}
+            </div>
+          )}
+          {live && !live.available && live.error && (
+            <p className="stats-note stats-note-tight">
+              Cota ao vivo indisponível: {live.error}
+            </p>
+          )}
 
           {claudeErro && <p className="stats-empty">Não foi possível ler o uso local: {claudeErro}</p>}
 
@@ -306,6 +387,45 @@ function Cartao({ rotulo, valor }: { rotulo: string; valor: string }) {
     <div className="stats-card">
       <span className="stats-card-value">{valor}</span>
       <span className="stats-card-label">{rotulo}</span>
+    </div>
+  );
+}
+
+/**
+ * Barra de cota de uma janela da Anthropic: percentual usado + quando zera.
+ * O tom acompanha o estado — atenção a partir de 60%, alerta no limite
+ * `COTA_ALERTA_PCT` — para a cor sozinha não ser a única pista.
+ */
+function BarraCota({
+  janela,
+  rotulo,
+  agora,
+}: {
+  janela: ClaudeWindowUsage;
+  rotulo: string;
+  agora: number;
+}) {
+  const tom = tomCota(janela.utilizationPct);
+  return (
+    <div
+      className={`stats-cota ${
+        tom === "alta" ? "cota-alta" : tom === "atencao" ? "cota-atencao" : ""
+      }`}
+    >
+      <div className="stats-cota-top">
+        <span className="stats-cota-rotulo">{rotulo}</span>
+        <span className="stats-cota-pct">{janela.utilizationPct.toFixed(0)}%</span>
+      </div>
+      <div className="stats-cota-track">
+        <div
+          className="stats-cota-fill"
+          style={{ width: `${Math.min(100, janela.utilizationPct)}%` }}
+        />
+      </div>
+      <span className="stats-cota-reset">
+        {janela.utilizationPct >= COTA_ALERTA_PCT && "Cota quase no limite — "}
+        reseta em {formatCountdown(janela.resetsAtMs, agora)}
+      </span>
     </div>
   );
 }

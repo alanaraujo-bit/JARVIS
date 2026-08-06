@@ -1,8 +1,9 @@
 pub mod agents;
 pub mod ai;
 pub mod claude_accounts;
-pub mod collab;
 pub mod claude_usage;
+pub mod claude_usage_live;
+pub mod collab;
 pub mod commands;
 pub mod config;
 pub mod error;
@@ -90,6 +91,8 @@ pub fn run() {
             commands::ai_models,
             commands::claude_usage_summary,
             commands::claude_usage_by_account,
+            commands::claude_usage_live,
+            commands::claude_usage_live_by_account,
             commands::claude_settings_get,
             commands::claude_settings_set,
             commands::claude_account_prepare,

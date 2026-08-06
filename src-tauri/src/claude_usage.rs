@@ -335,6 +335,39 @@ fn parse_rfc3339_ms(s: &str) -> Option<u64> {
     u64::try_from(ms).ok()
 }
 
+/// Versão do parser que aceita também offset numérico (`+00:00`, `-03:00`),
+/// como a Anthropic devolve em `resets_at` — a base só conhece o `Z` que a
+/// CLI grava localmente. O offset é aplicado ao epoch, então quem chamar
+/// recebe sempre milissegundos UTC.
+pub(crate) fn parse_rfc3339_ms_com_offset(s: &str) -> Option<u64> {
+    let s = s.trim();
+    // Offset: `Z` (UTC) ou ±HH:MM no fim. O último sinal depois do 'T' é o
+    // do offset; um sinal antes disso pertence à data e a string não tem
+    // offset (aceitamos por tolerância, tratando como UTC).
+    let (corpo, desloc_min) = if let Some(c) = s.strip_suffix('Z') {
+        (c, 0i64)
+    } else {
+        let t_pos = s.find('T')?;
+        let sinal = s.rfind(|c| c == '+' || c == '-')?;
+        if sinal < t_pos {
+            (s, 0i64)
+        } else {
+            let (hh, mm) = s[sinal + 1..].split_once(':')?;
+            let hh: i64 = hh.parse().ok()?;
+            let mm: i64 = mm.parse().ok()?;
+            let dir = if s.as_bytes().get(sinal) == Some(&b'-') { -1 } else { 1 };
+            (&s[..sinal], dir * (hh * 60 + mm))
+        }
+    };
+    // A base exige o sufixo `Z`; reconstituí-lo é o jeito de reusar o parser
+    // já testado em vez de duplicar a aritmética de data aqui. O ajuste do
+    // offset roda em i128 para os sinais não brigarem: `-03:00` soma 3h ao
+    // UTC, `+05:00` subtrai.
+    let base = parse_rfc3339_ms(&format!("{corpo}Z"))?;
+    let offset_ms = desloc_min.saturating_mul(60_000);
+    u64::try_from(base as i128 - offset_ms as i128).ok()
+}
+
 /// Algoritmo civil-de-Hinnant (dias desde a época Unix a partir de
 /// ano/mês/dia gregoriano). Correto para qualquer data >= 0000-03-01.
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
@@ -357,6 +390,23 @@ mod tests {
         assert_eq!(parse_rfc3339_ms("1970-01-01T00:00:00.500Z"), Some(500));
         assert_eq!(parse_rfc3339_ms("1970-01-01T00:00:01Z"), Some(1000));
         assert_eq!(parse_rfc3339_ms("2026-01-01T00:00:00Z"), Some(1_767_225_600_000));
+    }
+
+    #[test]
+    fn parse_timestamp_com_offset_numerico() {
+        // O mesmo instante escrito com `Z` e com offset +00:00.
+        let z = parse_rfc3339_ms_com_offset("2026-03-10T04:59:59.5Z").unwrap();
+        assert_eq!(
+            parse_rfc3339_ms_com_offset("2026-03-10T04:59:59.500000+00:00"),
+            Some(z)
+        );
+        // -03:00 adianta 3h em relação ao UTC.
+        assert_eq!(
+            parse_rfc3339_ms_com_offset("2026-03-10T01:59:59.5-03:00"),
+            Some(z)
+        );
+        // O offset não pode virar um número negativo de epoch.
+        assert!(parse_rfc3339_ms_com_offset("1970-01-01T00:00:00+00:00").is_some());
     }
 
     #[test]

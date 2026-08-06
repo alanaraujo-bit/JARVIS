@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionInfo } from "./ipc";
-import { computeStats, formatBytes, formatDuration } from "./stats";
+import {
+  COTA_ALERTA_PCT,
+  computeStats,
+  formatBytes,
+  formatCountdown,
+  formatDuration,
+  tomCota,
+} from "./stats";
 
 function sessao(patch: Partial<SessionInfo> = {}): SessionInfo {
   return {
@@ -102,5 +109,39 @@ describe("formatDuration", () => {
     expect(formatDuration(90_000)).toBe("1min");
     expect(formatDuration(3_600_000)).toBe("1h");
     expect(formatDuration(3_600_000 + 14 * 60_000)).toBe("1h 14min");
+  });
+});
+
+describe("formatCountdown", () => {
+  it("arredonda para cima para nunca prometer um reset que ainda não chegou", () => {
+    // 181min e 1s arredonda para cima: 182min (3h 2min), nunca 3h.
+    expect(formatCountdown(3 * 3_600_000 + 61_000, 0)).toBe("3h 2min");
+    expect(formatCountdown(3_600_000, 0)).toBe("1h");
+    expect(formatCountdown(45_001, 0)).toBe("1min");
+  });
+
+  it("abaixo de uma hora mostra só minutos (60min vira 1h, como o formatDuration)", () => {
+    expect(formatCountdown(3_600_000 - 1, 0)).toBe("1h");
+    expect(formatCountdown(90_000, 0)).toBe("2min");
+  });
+
+  it("janela vencida ou inválida vira 'agora'", () => {
+    expect(formatCountdown(10_000, 50_000)).toBe("agora");
+    expect(formatCountdown(0, 0)).toBe("agora");
+    expect(formatCountdown(NaN, 0)).toBe("agora");
+  });
+});
+
+describe("tomCota", () => {
+  it("acende o alerta só a partir do limite", () => {
+    expect(tomCota(79.9)).toBe("atencao");
+    expect(tomCota(COTA_ALERTA_PCT)).toBe("alta");
+    expect(tomCota(100)).toBe("alta");
+  });
+
+  it("passa por atenção antes do alerta", () => {
+    expect(tomCota(0)).toBe("ok");
+    expect(tomCota(59.9)).toBe("ok");
+    expect(tomCota(60)).toBe("atencao");
   });
 });

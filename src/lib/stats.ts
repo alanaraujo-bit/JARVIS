@@ -95,3 +95,34 @@ export function formatDuration(ms: number): string {
   if (min > 0) return `${min}min`;
   return `${s}s`;
 }
+
+/* ------------------------- cota do Claude Code ------------------------- */
+
+/** Limite a partir do qual a cota da Anthropic é tratada como "quase no limite". */
+export const COTA_ALERTA_PCT = 80;
+
+/**
+ * "3h 24min" até um timestamp futuro de reset. Janelas já vencidas (a API
+ * pode devolver um `resetsAt` no passado entre duas consultas) viram
+ * "agora".
+ */
+export function formatCountdown(resetsAtMs: number, agora: number = Date.now()): string {
+  if (!Number.isFinite(resetsAtMs) || resetsAtMs <= 0) return "agora";
+  const falta = resetsAtMs - agora;
+  if (falta <= 0) return "agora";
+  const min = Math.ceil(falta / 60_000);
+  if (min < 60) return `${min}min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
+
+/**
+ * Tom visual de uma cota: normal, atenção (a partir de 60%) ou alerta
+ * (a partir de `COTA_ALERTA_PCT`).
+ */
+export function tomCota(pct: number): "ok" | "atencao" | "alta" {
+  if (pct >= COTA_ALERTA_PCT) return "alta";
+  if (pct >= 60) return "atencao";
+  return "ok";
+}
