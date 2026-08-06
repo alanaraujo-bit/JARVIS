@@ -11,6 +11,8 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { UpdatePanel } from "./components/UpdatePanel";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { NavRail, type RailDest } from "./components/NavRail";
+import { CollabScreen } from "./components/CollabScreen";
+import { GuestWorkspace } from "./components/GuestWorkspace";
 import { Onboarding } from "./components/Onboarding";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { ProfileScreen } from "./components/ProfileScreen";
@@ -22,6 +24,8 @@ import { useNotesStore } from "./stores/notesStore";
 import { useUiStore } from "./stores/uiStore";
 import { useUpdateStore } from "./stores/updateStore";
 import { useAccountStore } from "./stores/accountStore";
+import { useCollabStore } from "./stores/collabStore";
+import { onCollabAiAsk } from "./lib/collabIpc";
 import { Icon, shellIcon } from "./components/Icon";
 import { buildAiContext, buildSystemPrompt, captureTerminalLines } from "./lib/aiContext";
 import { getTerminal } from "./lib/terminalRegistry";
@@ -180,6 +184,17 @@ export default function App() {
   const notesOpen = useNotesStore((s) => s.panelOpen);
   const toggleNotes = useNotesStore((s) => s.togglePanel);
 
+  const collabOpen = useCollabStore((s) => s.panelOpen);
+  const abrirCollab = useCollabStore((s) => s.openPanel);
+  const fecharCollab = useCollabStore((s) => s.closePanel);
+  const pendentesNaPorta = useCollabStore((s) => s.host.room?.pending.length ?? 0);
+  /**
+   * Enquanto o convidado está numa sala, a área de trabalho inteira passa a
+   * ser a da máquina do anfitrião. Os terminais locais continuam vivos por
+   * trás — só não são o que está na tela.
+   */
+  const emSalaDeOutro = useCollabStore((s) => s.guest.phase === "joined");
+
   /**
    * Abaixo de 900px as duas gavetas passam a flutuar sobre o terminal em vez
    * de disputar espaço com ele (ver `styles.css`). Com as duas abertas ao
@@ -224,6 +239,7 @@ export default function App() {
   const selecionarRota = useCallback(
     (dest: RailDest) => {
       const eraAtiva =
+        (dest === "share" && collabOpen) ||
         (dest === "notes" && notesOpen) ||
         (dest === "stats" && statsOpen) ||
         (dest === "history" && historyOpen) ||
@@ -238,9 +254,14 @@ export default function App() {
         fecharPainelUpdate();
         fecharPainelContas();
         fecharTelas();
+        fecharCollab();
       }
 
       switch (dest) {
+        case "share":
+          if (eraAtiva) fecharCollab();
+          else abrirCollab();
+          break;
         case "notes":
           toggleNotes();
           break;
@@ -267,6 +288,9 @@ export default function App() {
       }
     },
     [
+      collabOpen,
+      abrirCollab,
+      fecharCollab,
       notesOpen,
       toggleNotes,
       statsOpen,
@@ -444,6 +468,41 @@ export default function App() {
       const orfas = findOrphans(entries, aliveIds);
       if (orfas.length > 0) setRecovery(orfas);
     })();
+  }, []);
+
+  /**
+   * Trabalho compartilhado: espelha o estado da sala e responde aos
+   * convidados.
+   *
+   * A pergunta de um convidado é atendida **pelo mesmo caminho** que a do
+   * anfitrião — o mesmo provedor, as mesmas chaves, o mesmo contexto de
+   * terminal, e o balão aparece na conversa daqui. Ter um segundo caminho
+   * "para a IA remota" significaria duas implementações do que é a mesma
+   * pergunta, e uma delas envelheceria sem ninguém notar.
+   */
+  useEffect(() => {
+    let soltar: (() => void) | null = null;
+    void useCollabStore
+      .getState()
+      .init()
+      .then((fn) => {
+        soltar = fn;
+      });
+
+    const pedido = onCollabAiAsk((e) => {
+      if (e.k !== "ask") return;
+      const { systemPrompt, context } = captureAiContextRef.current();
+      void useAiStore.getState().sendMessage(e.text, context, systemPrompt, {
+        author: { name: e.authorName, color: e.authorColor },
+        relayId: e.requestId,
+      });
+    });
+
+    return () => {
+      soltar?.();
+      void pedido.then((fn) => fn());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -973,6 +1032,13 @@ export default function App() {
     };
   }, [activeWorkspaceId, workspaces, sessions]);
 
+  // O ouvinte de perguntas dos convidados é registrado uma vez só, na
+  // montagem; sem esta ref ele congelaria o contexto do primeiro render e as
+  // respostas passariam a ignorar o terminal e o projeto que estão ativos
+  // agora.
+  const captureAiContextRef = useRef(captureAiContext);
+  captureAiContextRef.current = captureAiContext;
+
   /* ---------------------------- atalhos -------------------------------- */
 
   const shortcutActions = useMemo(
@@ -1090,7 +1156,8 @@ export default function App() {
       !settingsOpen &&
       !profileOpen &&
       !updatePainelAberto &&
-      !contasPainelAberto
+      !contasPainelAberto &&
+      !collabOpen
     )
       return;
     const onKey = (e: KeyboardEvent) => {
@@ -1103,6 +1170,7 @@ export default function App() {
       fecharTelas();
       fecharPainelUpdate();
       fecharPainelContas();
+      fecharCollab();
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
@@ -1114,6 +1182,8 @@ export default function App() {
     profileOpen,
     updatePainelAberto,
     contasPainelAberto,
+    collabOpen,
+    fecharCollab,
     fecharTelas,
     fecharPainelUpdate,
     fecharPainelContas,
@@ -1266,6 +1336,13 @@ export default function App() {
         shortcut: "Ctrl+Shift+N",
         keywords: "notas anotações bloco de notas notepad rascunho vibe coding",
         run: toggleNotes,
+      },
+      {
+        id: "app.share",
+        title: "Trabalho compartilhado — abrir sala ou entrar numa",
+        group: "Aplicativo",
+        keywords: "compartilhar colaborar junto primo amigo dupla remoto sala convidar terminal compartilhado pair programming",
+        run: () => selecionarRota("share"),
       },
       {
         id: "app.accounts",
@@ -1547,7 +1624,9 @@ export default function App() {
   // Rota ativa do menu lateral, derivada do que está aberto. O menu nunca
   // desmente as sobreposições porque é ele quem as abre — e a derivação
   // garante que a marcação acompanhe até o que foi aberto por atalho.
-  const railDest: RailDest = settingsOpen
+  const railDest: RailDest = collabOpen
+    ? "share"
+    : settingsOpen
     ? "settings"
     : profileOpen
       ? "profile"
@@ -1563,11 +1642,18 @@ export default function App() {
     <div
       className={`app ${railExpanded ? "rail-expanded" : "rail-collapsed"} ${
         sidebarOpen ? "sidebar-open" : ""
-      } ${aiPanelOpen ? "ai-open" : ""}`}
+      } ${aiPanelOpen ? "ai-open" : ""} ${emSalaDeOutro ? "guest-mode" : ""}`}
       style={activeWs ? { "--ws-color": activeWs.color } as React.CSSProperties : undefined}
     >
       <UpdateBanner />
-      <NavRail active={railDest} notesOpen={notesOpen} onSelect={selecionarRota} expanded={railExpanded} onToggleRail={toggleRail} />
+      <NavRail
+        active={railDest}
+        notesOpen={notesOpen}
+        onSelect={selecionarRota}
+        expanded={railExpanded}
+        onToggleRail={toggleRail}
+        shareBadge={pendentesNaPorta}
+      />
       <header className="topbar">
         <button
           className={`topbar-btn ${sidebarOpen ? "active" : ""}`}
@@ -1750,7 +1836,14 @@ export default function App() {
       <div className="body-row">
         <WorkspaceSidebar />
 
-        <main className="stage">
+        {/*
+          Em sala de outra pessoa, a área local sai da tela mas **continua
+          montada**: desmontá-la destruiria todos os xterms daqui, e o
+          `npm run dev` da própria máquina perderia o scrollback só porque
+          alguém entrou numa sala por dez minutos. É o mesmo tratamento que
+          uma aba de fundo já recebe.
+        */}
+        <main className="stage" hidden={emSalaDeOutro}>
           {error && <div className="error">{error}</div>}
           {recovery.length > 0 && (
             <div className="recovery-banner">
@@ -1866,6 +1959,8 @@ export default function App() {
           ))}
         </main>
 
+        {emSalaDeOutro && <GuestWorkspace />}
+
         <AiPanel
           onRunCommand={runCommandInTerminal}
           captureContext={captureAiContext}
@@ -1905,6 +2000,7 @@ export default function App() {
           setOnboardingDone(false);
         }}
       />
+      <CollabScreen open={collabOpen} onClose={fecharCollab} sessions={listaSessoes} />
       <ProfileScreen
         open={profileOpen}
         onClose={() => setProfileOpen(false)}

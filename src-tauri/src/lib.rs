@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod claude_accounts;
+pub mod collab;
 pub mod claude_usage;
 pub mod commands;
 pub mod config;
@@ -15,8 +16,9 @@ use std::sync::Arc;
 
 use tauri::{Manager, RunEvent, WindowEvent};
 
+use crate::collab::CollabHub;
 use crate::pty::PtyManager;
-use crate::sink::TauriSink;
+use crate::sink::{FanSink, TauriSink};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,10 +40,19 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            let manager = PtyManager::new(Arc::new(TauriSink::new(app.handle().clone())))
+            // O hub nasce antes do motor de PTY porque a saída dos terminais
+            // passa a ser entregue aos dois — janela local e sala — pelo
+            // mesmo `EventSink`. Com a sala fechada (o estado normal), o
+            // desvio para ela custa uma leitura atômica.
+            let hub = Arc::new(CollabHub::new());
+            hub.attach(app.handle().clone());
+
+            let sink = FanSink::new(TauriSink::new(app.handle().clone()), Arc::clone(&hub));
+            let manager = PtyManager::new(Arc::new(sink))
                 .with_transcript(crate::transcript::TranscriptStore::new());
             manager.start_dispatcher();
             app.manage(manager);
+            app.manage(hub);
 
             let config_mgr = crate::config::ConfigManager::new();
             app.manage(config_mgr);
@@ -85,9 +96,30 @@ pub fn run() {
             commands::claude_account_logout,
             commands::claude_account_forget,
             commands::claude_default_login_exists,
+            commands::collab_start,
+            commands::collab_stop,
+            commands::collab_state,
+            commands::collab_share,
+            commands::collab_unshare,
+            commands::collab_set_approval,
+            commands::collab_decide,
+            commands::collab_kick,
+            commands::collab_chat,
+            commands::collab_ai_ask,
+            commands::collab_ai_relay,
+            commands::collab_tunnel_available,
+            commands::collab_tunnel_download,
+            commands::collab_tunnel_start,
+            commands::collab_tunnel_stop,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::Destroyed = event {
+                // A sala primeiro: fechar os PTYs antes de avisar os
+                // convidados deixaria a tela deles congelada num terminal que
+                // já morreu, sem nenhuma explicação.
+                if let Some(h) = window.try_state::<Arc<CollabHub>>() {
+                    h.close("O anfitrião fechou o JARVIS.");
+                }
                 if let Some(m) = window.try_state::<PtyManager>() {
                     m.shutdown();
                 }
@@ -99,6 +131,12 @@ pub fn run() {
             // Rede de segurança: qualquer caminho de saída passa por aqui,
             // então nenhum shell fica órfão segurando arquivos do projeto.
             if let RunEvent::Exit = event {
+                // Vale também para o túnel: um `cloudflared` sobrevivente
+                // manteria um endereço público apontando para uma porta que
+                // não existe mais.
+                if let Some(h) = app.try_state::<Arc<CollabHub>>() {
+                    h.close("O anfitrião fechou o JARVIS.");
+                }
                 if let Some(m) = app.try_state::<PtyManager>() {
                     m.shutdown();
                 }

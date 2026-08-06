@@ -22,6 +22,7 @@ import { Icon, type IconName } from "./Icon";
 /** Destinos que a grade pode abrir. */
 export type RailDest =
   | "home"
+  | "share"
   | "notes"
   | "stats"
   | "history"
@@ -36,6 +37,13 @@ interface NavRailProps {
   /** `true` = expandido, com rótulos. `false` = recolhido, só ícones. */
   expanded: boolean;
   onToggleRail: () => void;
+  /**
+   * Quantas pessoas estão esperando aprovação para entrar na sala. O pedido
+   * pode chegar com a tela de compartilhamento fechada, e sem um sinal aqui
+   * o convidado ficaria olhando para "aguardando o anfitrião" enquanto o
+   * anfitrião não faz ideia de que alguém bateu à porta.
+   */
+  shareBadge?: number;
 }
 
 interface Item {
@@ -52,6 +60,13 @@ const ITENS: Item[] = [
     icon: "home",
     label: "Início",
     hint: "Seus terminais e workspaces",
+    group: "principal",
+  },
+  {
+    dest: "share",
+    icon: "share",
+    label: "Compartilhar",
+    hint: "Trabalhe junto no mesmo terminal",
     group: "principal",
   },
   {
@@ -98,7 +113,14 @@ const ITENS: Item[] = [
   },
 ];
 
-export function NavRail({ active, onSelect, expanded, onToggleRail, notesOpen }: NavRailProps) {
+export function NavRail({
+  active,
+  onSelect,
+  expanded,
+  onToggleRail,
+  notesOpen,
+  shareBadge = 0,
+}: NavRailProps) {
   const versao = useUpdateStore((s) => s.versaoAtual);
   const glowRef = usePointerGlow<HTMLDivElement>();
 
@@ -131,6 +153,11 @@ export function NavRail({ active, onSelect, expanded, onToggleRail, notesOpen }:
                 <span className="nav-item-label">{item.label}</span>
                 <span className="nav-item-hint">{item.hint}</span>
               </span>
+              {item.dest === "share" && shareBadge > 0 && (
+                <span className="nav-item-badge" aria-label={`${shareBadge} esperando para entrar`}>
+                  {shareBadge}
+                </span>
+              )}
             </button>
           </div>
         ))}

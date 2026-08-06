@@ -41,15 +41,23 @@ pub fn pty_write(manager: State<'_, PtyManager>, id: String, b64: String) -> Res
 /// exibindo a mesma sessao brigariam pelo resize num laco infinito; o motor
 /// aplica o menor tamanho pedido e devolve o que realmente aplicou, para o
 /// front nao desenhar o xterm maior do que o PTY de fato esta.
+///
+/// O convidado de uma sala compartilhada **não** entra nessa negociação: se o
+/// tamanho dele contasse, uma janela pequena do outro lado encolheria o
+/// terminal do anfitrião e refluiria o trabalho dele. O que acontece é o
+/// contrário — o tamanho decidido aqui é anunciado à sala, e a tela do
+/// convidado se ajusta para ficar idêntica à do anfitrião.
 #[tauri::command(async)]
 pub fn pty_resize(
     manager: State<'_, PtyManager>,
+    hub: State<'_, Arc<crate::collab::CollabHub>>,
     id: String,
     view_id: String,
     cols: u16,
     rows: u16,
 ) -> Result<ResizeResult> {
     let (cols, rows) = manager.resize(&id, &view_id, cols, rows)?;
+    hub.on_resize(&id, cols, rows);
     Ok(ResizeResult { cols, rows })
 }
 
@@ -401,4 +409,227 @@ pub fn claude_default_login_exists() -> bool {
     crate::claude_accounts::default_claude_dir()
         .map(|d| d.join(".credentials.json").is_file())
         .unwrap_or(false)
+}
+
+/* ------------------------- trabalho compartilhado ------------------------ */
+
+use crate::collab::protocol::{AiEvent, Mode, SharedTerminal};
+use crate::collab::{server, tunnel, CollabHub, HostState, StartOptions};
+
+/// Liga o servidor da sala ao motor de terminais que o Tauri administra.
+///
+/// O estado é buscado a cada chamada em vez de guardado aqui porque o
+/// `PtyManager` pertence ao app, não à sala: uma sala que continuasse
+/// segurando o motor depois de o app começar a desligar escreveria em PTYs
+/// que já estão sendo derrubados.
+struct PtyDoApp(tauri::AppHandle);
+
+impl server::PtyAccess for PtyDoApp {
+    fn write(&self, session_id: &str, bytes: &[u8]) {
+        if let Some(pty) = self.0.try_state::<PtyManager>() {
+            let _ = pty.write(session_id, bytes);
+        }
+    }
+
+    fn snapshot(&self, session_id: &str) -> Option<crate::protocol::Snapshot> {
+        self.0
+            .try_state::<PtyManager>()
+            .and_then(|pty| pty.snapshot(session_id).ok())
+    }
+}
+
+/// Abre a sala: sobe o listener, guarda o endereço da rede local e — se
+/// pedido — o túnel público.
+///
+/// Nenhum terminal é exposto por este comando. A sala nasce vazia de
+/// propósito: compartilhar é sempre um segundo gesto, explícito e por
+/// terminal, para "abri a sala" nunca significar "mostrei tudo que eu tinha
+/// aberto".
+#[tauri::command(async)]
+pub async fn collab_start(
+    app: tauri::AppHandle,
+    hub: State<'_, Arc<CollabHub>>,
+    opts: StartOptions,
+) -> Result<HostState> {
+    if hub.is_active() {
+        return Ok(hub.host_state());
+    }
+
+    let (listener, porta) = server::bind(opts.port)
+        .await
+        .map_err(|e| JarvisError::ConfigIo(format!("não consegui abrir a porta da sala: {e}")))?;
+
+    let lan = endereco_local(porta);
+    hub.open(&opts, porta, lan);
+
+    let hub_srv = Arc::clone(&hub);
+    let pty_srv: Arc<dyn server::PtyAccess> = Arc::new(PtyDoApp(app.clone()));
+    tauri::async_runtime::spawn(async move {
+        server::serve(listener, hub_srv, pty_srv).await;
+    });
+
+    if opts.public {
+        let hub_tun = Arc::clone(&hub);
+        tauri::async_runtime::spawn(async move {
+            let aviso = {
+                let h = Arc::clone(&hub_tun);
+                move || h.publicar()
+            };
+            let _ = hub_tun.tunnel.start(porta, aviso).await;
+        });
+    }
+
+    Ok(hub.host_state())
+}
+
+#[tauri::command(async)]
+pub fn collab_stop(hub: State<'_, Arc<CollabHub>>) -> HostState {
+    hub.close("O anfitrião encerrou a sala.");
+    hub.host_state()
+}
+
+#[tauri::command(async)]
+pub fn collab_state(hub: State<'_, Arc<CollabHub>>) -> HostState {
+    hub.host_state()
+}
+
+/// Compartilha um terminal, ou muda a permissão de um já compartilhado.
+///
+/// Os dados descritivos (título, tamanho, se está vivo) vêm do motor de PTY, e
+/// não do front: são eles que o convidado vê, e o backend é a única fonte que
+/// não pode estar desatualizada.
+#[tauri::command(async)]
+pub fn collab_share(
+    manager: State<'_, PtyManager>,
+    hub: State<'_, Arc<CollabHub>>,
+    id: String,
+    mode: Mode,
+    title: Option<String>,
+) -> Result<HostState> {
+    let info = manager
+        .list()
+        .into_iter()
+        .find(|s| s.id == id)
+        .ok_or_else(|| JarvisError::SessionNotFound(id.clone()))?;
+
+    hub.share(SharedTerminal {
+        session_id: info.id.clone(),
+        title: title.unwrap_or_else(|| info.title.clone()),
+        mode,
+        cols: info.cols,
+        rows: info.rows,
+        alive: info.alive,
+        // Só o último trecho do caminho: situa o convidado sem publicar o
+        // nome de usuário do anfitrião nem a árvore de pastas dele.
+        folder: std::path::Path::new(&info.cwd)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string()),
+    });
+    Ok(hub.host_state())
+}
+
+#[tauri::command(async)]
+pub fn collab_unshare(hub: State<'_, Arc<CollabHub>>, id: String) -> HostState {
+    hub.unshare(&id);
+    hub.host_state()
+}
+
+#[tauri::command(async)]
+pub fn collab_set_approval(hub: State<'_, Arc<CollabHub>>, require: bool) -> HostState {
+    hub.set_require_approval(require);
+    hub.host_state()
+}
+
+#[tauri::command(async)]
+pub fn collab_decide(hub: State<'_, Arc<CollabHub>>, id: String, approve: bool) -> HostState {
+    hub.decidir(&id, approve);
+    hub.host_state()
+}
+
+#[tauri::command(async)]
+pub fn collab_kick(hub: State<'_, Arc<CollabHub>>, id: String) -> HostState {
+    hub.kick(&id);
+    hub.host_state()
+}
+
+/// Mensagem de chat escrita pelo anfitrião.
+#[tauri::command(async)]
+pub fn collab_chat(hub: State<'_, Arc<CollabHub>>, text: String) -> HostState {
+    hub.post_chat("host", &text);
+    hub.host_state()
+}
+
+/// Pergunta do próprio anfitrião, espelhada na sala para os convidados verem
+/// a conversa inteira e não só as respostas.
+#[tauri::command(async)]
+pub fn collab_ai_ask(hub: State<'_, Arc<CollabHub>>, text: String) {
+    hub.ai_ask("host", &text);
+}
+
+/// Repassa aos convidados o que a IA está respondendo no anfitrião.
+#[tauri::command(async)]
+pub fn collab_ai_relay(hub: State<'_, Arc<CollabHub>>, event: AiEvent) {
+    hub.ai_relay(event);
+}
+
+/* ------------------------------- túnel ---------------------------------- */
+
+#[tauri::command(async)]
+pub fn collab_tunnel_available() -> bool {
+    tunnel::Tunnel::disponivel()
+}
+
+#[tauri::command(async)]
+pub async fn collab_tunnel_download(hub: State<'_, Arc<CollabHub>>) -> Result<bool> {
+    let h = Arc::clone(&hub);
+    let aviso = move |_estado| h.publicar();
+    hub.tunnel
+        .baixar(aviso)
+        .await
+        .map_err(JarvisError::ConfigIo)?;
+    hub.publicar();
+    Ok(true)
+}
+
+#[tauri::command(async)]
+pub async fn collab_tunnel_start(hub: State<'_, Arc<CollabHub>>) -> Result<HostState> {
+    let porta = hub
+        .host_state()
+        .room
+        .map(|r| r.port)
+        .ok_or_else(|| JarvisError::ConfigIo("não há sala aberta".into()))?;
+    let h = Arc::clone(&hub);
+    let aviso = move || h.publicar();
+    hub.tunnel
+        .start(porta, aviso)
+        .await
+        .map_err(JarvisError::ConfigIo)?;
+    Ok(hub.host_state())
+}
+
+#[tauri::command(async)]
+pub fn collab_tunnel_stop(hub: State<'_, Arc<CollabHub>>) -> HostState {
+    hub.tunnel.stop();
+    hub.publicar();
+    hub.host_state()
+}
+
+/// Endereço desta máquina na rede local, no formato que o convidado cola.
+///
+/// A rota é descoberta "conectando" um socket UDP a um endereço externo: o
+/// sistema escolhe a interface que de fato sairia por ali e podemos ler o IP
+/// dela. Nenhum pacote é enviado — `connect` em UDP só fixa o destino padrão —
+/// então isto funciona sem internet e sem esperar por rede.
+///
+/// É melhor que enumerar interfaces porque um notebook típico tem várias
+/// (Wi-Fi, Ethernet, adaptadores virtuais do WSL, Docker, VPN) e só a tabela
+/// de roteamento sabe qual delas o convidado consegue alcançar.
+fn endereco_local(porta: u16) -> Option<String> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    sock.connect("8.8.8.8:80").ok()?;
+    let ip = sock.local_addr().ok()?.ip();
+    if ip.is_loopback() || ip.is_unspecified() {
+        return None;
+    }
+    Some(format!("ws://{ip}:{porta}"))
 }

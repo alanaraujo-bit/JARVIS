@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -7,18 +7,10 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { SearchAddon } from "@xterm/addon-search";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
-import {
-  b64ToBytes,
-  onPtyData,
-  ptyDetachView,
-  ptyResize,
-  ptySnapshot,
-  ptyWrite,
-  ptyWriteBinary,
-} from "../lib/ipc";
 import { readClipboardText, writeClipboardText } from "../lib/clipboard";
 import { diffTexto } from "../lib/dictation";
 import { registerTerminal, unregisterTerminal } from "../lib/terminalRegistry";
+import { localTransport, type TermTransport } from "../lib/termTransport";
 import { theme } from "../lib/theme";
 import { Icon } from "./Icon";
 
@@ -28,6 +20,18 @@ interface Props {
   focused?: boolean;
   /** Ctrl+F dentro do terminal pede a barra de busca ao painel. */
   onOpenSearch?: () => void;
+  /**
+   * De onde vêm os bytes. O padrão é a sessão local desta máquina; o modo
+   * convidado passa o transporte remoto e ganha o mesmo terminal, com busca,
+   * ditado e copiar/colar idênticos.
+   */
+  transport?: TermTransport;
+  /**
+   * Bloqueia a digitação. É conforto, não segurança — quem decide de fato é
+   * o anfitrião, a cada tecla que chega (ver `collab/server.rs`). Aqui serve
+   * para a pessoa não digitar num terminal que não vai reagir.
+   */
+  readOnly?: boolean;
 }
 
 let viewSeq = 0;
@@ -42,8 +46,25 @@ function makeViewId(): string {
  * Um `<TerminalView>` = um painel exibindo uma sessão de PTY. O componente é
  * deliberadamente burro: não guarda estado de aba, só liga o xterm ao canal.
  */
-export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props) {
+export function TerminalView({
+  sessionId,
+  focused = true,
+  onOpenSearch,
+  transport,
+  readOnly = false,
+}: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  // O transporte fica numa ref, e não nas dependências do efeito: entrar nelas
+  // faria o xterm ser destruído e recriado — perdendo scrollback, seleção e
+  // contexto WebGL — se quem renderiza passasse um objeto novo. Um painel é
+  // local ou remoto pela vida inteira, então a ref é sempre o que vale.
+  const canal = useMemo(() => transport ?? localTransport(sessionId), [transport, sessionId]);
+  const canalRef = useRef(canal);
+  canalRef.current = canal;
+  // Mesmo motivo: a permissão muda em pleno voo (o anfitrião troca para "só
+  // ver"), e isso não pode remontar o terminal.
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const termRef = useRef<Terminal | null>(null);
   // Identidade estável do painel, para o backend saber de quem é cada resize.
   // `useState` com inicializador preguiçoso: ao contrário do argumento de
@@ -95,6 +116,9 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
       scrollback: 10_000,
       theme: theme.xterm,
       rightClickSelectsWord: true,
+      // Já no construtor: um painel que nasce só de leitura não deve aceitar
+      // a primeira tecla e só então descobrir a permissão pelo efeito.
+      disableStdin: readOnlyRef.current,
     });
     termRef.current = term;
 
@@ -144,13 +168,15 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
       const key = `${term.cols}x${term.rows}`;
       if (key === lastSent) return;
       lastSent = key;
-      void ptyResize(sessionId, viewId, term.cols, term.rows)
+      void canalRef.current
+        .resize(viewId, term.cols, term.rows)
         .then((agreed) => {
-          if (disposed) return;
-          // Com splits, o tamanho aplicado pode ser menor do que o pedido
-          // (outro painel exibindo a mesma sessão). Sem realinhar aqui, o
-          // xterm continuaria desenhando em 200 colunas enquanto o shell
-          // emite pensando que a tela tem 80.
+          if (disposed || !agreed) return;
+          // O tamanho aplicado pode não ser o pedido: com splits, outro painel
+          // exibindo a mesma sessão pode ter pedido menos; no modo convidado,
+          // quem manda é o terminal do anfitrião. Sem realinhar aqui, o xterm
+          // continuaria desenhando em 200 colunas enquanto o shell emite
+          // pensando que a tela tem 80.
           if (agreed.cols !== term.cols || agreed.rows !== term.rows) {
             term.resize(agreed.cols, agreed.rows);
             lastSent = `${agreed.cols}x${agreed.rows}`;
@@ -158,6 +184,17 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
         })
         .catch(() => {});
     };
+
+    /**
+     * O tamanho mudou por decisão de fora deste painel — o anfitrião
+     * redimensionou a janela dele. Aplicar direto, sem passar pelo `fit`: o
+     * que vale é o tamanho do outro lado, não o espaço disponível aqui.
+     */
+    const pararSize = canalRef.current.onSizeChange?.((cols, rows) => {
+      if (disposed) return;
+      term.resize(cols, rows);
+      lastSent = `${cols}x${rows}`;
+    });
 
     const scheduleSync = () => {
       // Arrastar a borda da janela dispara dezenas de eventos por segundo e
@@ -173,51 +210,71 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
     // entre a captura do histórico e o registro do ouvinte some para sempre —
     // e o que chegar antes do instantâneo ser escrito apareceria duplicado.
     let applied = false;
-    const fila: { bytes: Uint8Array; seq: number }[] = [];
+    let fila: { bytes: Uint8Array; seq: number }[] = [];
 
-    void onPtyData(sessionId, (bytes, seq) => {
-      if (disposed) return;
-      if (!applied) {
-        fila.push({ bytes, seq });
-        return;
-      }
-      term.write(bytes);
-    })
+    void canalRef.current
+      .onData((bytes, seq) => {
+        if (disposed) return;
+        if (!applied) {
+          fila.push({ bytes, seq });
+          return;
+        }
+        term.write(bytes);
+      })
       .then(async (fn) => {
         if (disposed) {
           fn();
           return;
         }
         unlisten = fn;
-
-        const snap = await ptySnapshot(sessionId).catch(() => null);
-        if (disposed) return;
-
-        let corte = 0;
-        if (snap) {
-          term.write(b64ToBytes(snap.b64));
-          corte = snap.seq;
-        }
-
-        // `seq` é o total acumulado de bytes da sessão: dá para cortar com
-        // precisão de byte a parte de cada lote que o instantâneo já cobria.
-        for (const item of fila) {
-          const inicio = item.seq - item.bytes.length;
-          if (item.seq <= corte) continue;
-          term.write(
-            inicio >= corte ? item.bytes : item.bytes.subarray(corte - inicio),
-          );
-        }
-        fila.length = 0;
-        applied = true;
-        syncSize();
+        await sincroniza();
       })
       .catch(() => {});
+
+    /**
+     * Casa o instantâneo com o fluxo ao vivo. Isolado numa função porque a
+     * reconexão do modo convidado precisa refazer exatamente isto: o que
+     * passou durante a queda não volta, e escrever o presente por cima do
+     * passado deixaria um buraco silencioso no meio da tela.
+     */
+    async function sincroniza() {
+      const snap = await canalRef.current.snapshot();
+      if (disposed) return;
+
+      let corte = 0;
+      if (snap) {
+        term.write(snap.bytes);
+        corte = snap.seq;
+      }
+
+      // `seq` é o total acumulado de bytes da sessão: dá para cortar com
+      // precisão de byte a parte de cada lote que o instantâneo já cobria.
+      for (const item of fila) {
+        const inicio = item.seq - item.bytes.length;
+        if (item.seq <= corte) continue;
+        term.write(inicio >= corte ? item.bytes : item.bytes.subarray(corte - inicio));
+      }
+      fila = [];
+      applied = true;
+      syncSize();
+    }
+
+    // A conexão voltou. `reset` limpa o buffer inteiro em vez de só a tela:
+    // manter o scrollback de antes da queda colado no de depois criaria um
+    // histórico que nunca existiu em nenhuma das duas máquinas.
+    const pararResync = canalRef.current.onResync?.(() => {
+      if (disposed) return;
+      applied = false;
+      fila = [];
+      term.reset();
+      void sincroniza();
+    });
 
     /* ------------------------------ entrada --------------------------- */
 
     const dataSub = term.onData((data) => {
-      void ptyWrite(sessionId, data).catch(() => {});
+      if (readOnlyRef.current) return;
+      canalRef.current.write(data);
     });
 
     /* --------------------- copiar, colar e buscar --------------------- */
@@ -310,7 +367,8 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
     // Alguns modos de reporte de mouse saem por `onBinary`, não por `onData`;
     // sem isso, a entrada de mouse de certos TUIs simplesmente some.
     const binarySub = term.onBinary((data) => {
-      void ptyWriteBinary(sessionId, data).catch(() => {});
+      if (readOnlyRef.current) return;
+      canalRef.current.writeBinary(data);
     });
 
     const ro = new ResizeObserver(scheduleSync);
@@ -323,6 +381,8 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
       ro.disconnect();
       dataSub.dispose();
       binarySub.dispose();
+      pararSize?.();
+      pararResync?.();
       host.removeEventListener("paste", onPasteHost, true);
       unlisten?.();
       searchRef.current = null;
@@ -341,9 +401,19 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
       // na ordem em que foram agendados, e o do xterm veio primeiro.
       setTimeout(() => term.dispose(), 0);
       // O painel sumiu: o tamanho dele não deve mais limitar a sessão.
-      void ptyDetachView(sessionId, viewId).catch(() => {});
+      canalRef.current.detach(viewId);
     };
   }, [sessionId]);
+
+  /**
+   * Permissão só de leitura. Efeito separado, e sem tocar no terminal em si:
+   * `disableStdin` impede a digitação mas preserva seleção, rolagem e cópia —
+   * que é exatamente o que "acompanhar" significa.
+   */
+  useEffect(() => {
+    const term = termRef.current;
+    if (term) term.options.disableStdin = readOnly;
+  }, [readOnly]);
 
   // Foco é um efeito separado justamente para não recriar o terminal. Com a
   // barra de ditado aberta o foco é dela — reconquistar o foco do terminal
@@ -388,14 +458,14 @@ export function TerminalView({ sessionId, focused = true, onOpenSearch }: Props)
               const delta = diffTexto(dictadoAnteriorRef.current, valor);
               dictadoAnteriorRef.current = valor;
               setDictado(valor);
-              if (delta) void ptyWrite(sessionId, delta).catch(() => {});
+              if (delta && !readOnly) canal.write(delta);
             }}
             onKeyDown={(e) => {
               // Não deixa a tecla vazar para o terminal por baixo.
               e.stopPropagation();
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                void ptyWrite(sessionId, "\r").catch(() => {});
+                if (!readOnly) canal.write("\r");
                 dictadoAnteriorRef.current = "";
                 setDictado("");
               } else if (e.key === "Escape") {

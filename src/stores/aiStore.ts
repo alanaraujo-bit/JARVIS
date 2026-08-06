@@ -24,6 +24,8 @@ import {
   type AiConfigPayload,
 } from "../lib/ipc";
 import { createChatMessage, type AiChatMessage, type AiContext } from "../lib/aiContext";
+import { collabAiRelay } from "../lib/collabIpc";
+import type { AiEvent as CollabAiEvent } from "../lib/collabProtocol";
 
 export type AiProvider = AiConfigPayload["provider"];
 export type AiConfig = AiConfigPayload;
@@ -62,7 +64,18 @@ export interface AiStore {
   setPanelOpen: (open: boolean) => void;
   toggleSettings: () => void;
   setConfig: (patch: Partial<AiConfig>) => void;
-  sendMessage: (content: string, context: AiContext, systemPrompt: string) => Promise<void>;
+  sendMessage: (
+    content: string,
+    context: AiContext,
+    systemPrompt: string,
+    /**
+     * Presente quando a pergunta veio de uma sala compartilhada. `relayId` é
+     * o id que o anfitrião já anunciou aos convidados: reaproveitá-lo (em vez
+     * de gerar outro) é o que faz os pedaços da resposta chegarem grudados na
+     * pergunta certa na tela deles.
+     */
+    shared?: { author?: { name: string; color: string }; relayId?: string },
+  ) => Promise<void>;
   cancelStream: () => Promise<void>;
   clearMessages: () => void;
   loadConfig: () => Promise<void>;
@@ -119,11 +132,12 @@ export const useAiStore = create<AiStore>((set, get) => ({
     void configSave({ ai: config }).catch(() => {});
   },
 
-  sendMessage: async (content, context, systemPrompt) => {
+  sendMessage: async (content, context, systemPrompt, shared) => {
     if (get().streaming) return;
 
     const { config, messages } = get();
     const userMsg = createChatMessage("user", content);
+    if (shared?.author) userMsg.author = shared.author;
     const assistantMsg = createChatMessage("assistant", "", true);
     const requestId = newRequestId();
 
@@ -146,6 +160,17 @@ export const useAiStore = create<AiStore>((set, get) => ({
     cancelamentos.set(requestId, () => {
       cancelado = true;
     });
+
+    /**
+     * Retransmite para a sala. Chamado no mesmo ponto em que a tela local é
+     * atualizada, para as duas verem a resposta nascer junto — e envolvido em
+     * `catch` porque um convidado que caiu não pode interromper a resposta que
+     * o anfitrião está lendo.
+     */
+    const espelha = (event: CollabAiEvent) => {
+      if (!shared?.relayId) return;
+      void collabAiRelay(event).catch(() => {});
+    };
 
     /** Fecha o streaming uma vez só, venha `done` ou `error`. */
     const encerra = (patch?: (m: AiChatMessage) => AiChatMessage) => {
@@ -170,6 +195,7 @@ export const useAiStore = create<AiStore>((set, get) => ({
           // caminho não podem continuar sendo concatenados: a frase ficava
           // embaralhada em volta do aviso de cancelamento.
           if (cancelado) return;
+          espelha({ k: "chunk", requestId: shared?.relayId ?? requestId, text });
           set((s) => ({
             messages: s.messages.map((m) =>
               m.id === assistantMsg.id ? { ...m, content: m.content + text } : m,
@@ -178,21 +204,27 @@ export const useAiStore = create<AiStore>((set, get) => ({
         }),
       );
       assinaturas.push(
-        await onAiDone(requestId, () =>
+        await onAiDone(requestId, () => {
+          espelha({ k: "done", requestId: shared?.relayId ?? requestId });
           encerra((m) =>
             // Um `done` sem nenhum chunk quase sempre é modelo inexistente
             // ou filtro do provedor; um balão vazio não diria nada disso.
             m.content || m.cancelled ? m : { ...m, content: "O provedor não retornou texto." },
-          ),
-        ),
+          );
+        }),
       );
       assinaturas.push(
-        await onAiError(requestId, (error) => encerra((m) => ({ ...m, error }))),
+        await onAiError(requestId, (error) => {
+          espelha({ k: "error", requestId: shared?.relayId ?? requestId, error });
+          encerra((m) => ({ ...m, error }));
+        }),
       );
 
       await aiChat({ requestId, messages: history, context, systemPrompt, config });
     } catch (e) {
-      encerra((m) => ({ ...m, error: mensagemDeErro(e) }));
+      const erro = mensagemDeErro(e);
+      espelha({ k: "error", requestId: shared?.relayId ?? requestId, error: erro });
+      encerra((m) => ({ ...m, error: erro }));
     }
   },
 

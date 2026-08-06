@@ -1,4 +1,8 @@
 @import "./styles/tokens.css";
+/* O trabalho compartilhado ganhou arquivo próprio: são duas telas inteiras
+   (o painel de controle e a área do convidado) e mais de quinhentas linhas —
+   dentro deste arquivo elas afogariam o resto. */
+@import "./styles/collab.css";
 
 * {
   box-sizing: border-box;

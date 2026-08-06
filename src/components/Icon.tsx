@@ -27,6 +27,11 @@ export type IconName =
   | "settings"
   | "agent"
   | "user"
+  | "share"
+  | "users"
+  | "link"
+  | "eye"
+  | "globe"
   | "close"
   | "minimize"
   | "plus"
@@ -133,6 +138,43 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <circle cx="12" cy="8.5" r="3.5" />
       <path d="M4.8 20a7.2 7.2 0 0 1 14.4 0" />
+    </>
+  ),
+  /* Três nós ligados: a metáfora de "compartilhar" mais legível a 18px. */
+  share: (
+    <>
+      <circle cx="18" cy="5.5" r="2.5" />
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="18.5" r="2.5" />
+      <path d="M8.2 10.8 15.8 6.7M8.2 13.2l7.6 4.1" />
+    </>
+  ),
+  /* Duas pessoas, uma atrás da outra — a lista de participantes da sala. */
+  users: (
+    <>
+      <circle cx="9.5" cy="8.5" r="3.2" />
+      <path d="M3 19.5a6.5 6.5 0 0 1 13 0" />
+      <path d="M16 5.6a3.2 3.2 0 0 1 0 5.8M17.5 14.2a6.5 6.5 0 0 1 3.5 5.3" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="M10.5 13.5a3.6 3.6 0 0 0 5.1 0l2.9-2.9a3.6 3.6 0 0 0-5.1-5.1l-1.5 1.5" />
+      <path d="M13.5 10.5a3.6 3.6 0 0 0-5.1 0l-2.9 2.9a3.6 3.6 0 0 0 5.1 5.1l1.5-1.5" />
+    </>
+  ),
+  /* Só ver, sem digitar: a permissão de leitura. */
+  eye: (
+    <>
+      <path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="2.8" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.5 12h17" />
+      <path d="M12 3.5c2.2 2.4 3.4 5.4 3.4 8.5S14.2 18.1 12 20.5c-2.2-2.4-3.4-5.4-3.4-8.5S9.8 5.9 12 3.5Z" />
     </>
   ),
   close: <path d="M6.2 6.2 17.8 17.8M17.8 6.2 6.2 17.8" />,

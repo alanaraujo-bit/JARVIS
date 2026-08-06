@@ -1,6 +1,6 @@
 [package]
 name = "jarvis"
-version = "0.6.0"
+version = "0.7.0"
 description = "JARVIS - central de terminais e agentes de IA para Windows"
 authors = ["Alan"]
 edition = "2021"
@@ -32,9 +32,29 @@ reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
 # um provedor que aceita a conexão e para de enviar bytes prenderia a
 # geração para sempre, já que o cliente de streaming não pode ter timeout
 # total (uma resposta longa leva minutos por natureza).
-tokio = { version = "1", features = ["sync", "time", "macros"] }
+#
+# O trabalho compartilhado acrescenta "rt-multi-thread", "net", "io-util" e
+# "process": o servidor de colaboração é um listener TCP com uma tarefa por
+# convidado, e o túnel público é um processo filho cuja saída é lida em
+# streaming à procura da URL.
+tokio = { version = "1", features = [
+  "sync",
+  "time",
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "io-util",
+  "process",
+] }
 futures = "0.3"
 rfd = "0.15"
+# WebSocket do trabalho compartilhado. Sem TLS de propósito: na rede local o
+# tráfego é `ws://` direto, e pela internet quem termina o TLS é o túnel — um
+# segundo certificado aqui dentro não protegeria nada a mais e custaria
+# tamanho de binário.
+tokio-tungstenite = { version = "0.26", default-features = false, features = [
+  "handshake",
+] }
 
 # O updater só existe no desktop; no mobile a loja é quem atualiza.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

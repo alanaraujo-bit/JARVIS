@@ -1,0 +1,811 @@
+/**
+ * Trabalho compartilhado.
+ *
+ * Duas superfícies distintas dividem este arquivo:
+ *
+ * - O **painel de controle** (`.collab-*`), que é uma sobreposição como as
+ *   Configurações e reaproveita a moldura delas (`.stats`), porque é o mesmo
+ *   gesto: abrir, mexer numas opções, fechar.
+ * - A **área do convidado** (`.guest-*`), que não é sobreposição nenhuma —
+ *   ela ocupa o lugar da área de trabalho local. É o que sustenta a sensação
+ *   de estar trabalhando naquele computador, e não espiando por uma janela.
+ */
+
+/* --------------------------- painel de controle ----------------------- */
+
+.collab-panel {
+  max-width: 720px;
+}
+
+.collab-tabs {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-6) 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.collab-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-fluid),
+    border-color var(--dur-fast) var(--ease-fluid);
+}
+
+.collab-tab:hover {
+  color: var(--text);
+}
+
+.collab-tab.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* Ponto verde na aba "Entrar numa sala" quando há conexão ativa: a pessoa
+   pode estar hospedando e participando ao mesmo tempo, e sem este sinal a
+   aba que não está na frente não contaria nada. */
+.collab-dot-on {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--ok);
+  animation: jarvis-breathe 2.6s var(--ease-linear) infinite;
+}
+
+.collab-start {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.collab-intro {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  max-width: 60ch;
+}
+
+.collab-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+
+.collab-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 1 1 180px;
+}
+
+.collab-field.wide {
+  flex-basis: 100%;
+}
+
+.collab-field > span {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.collab-field input {
+  padding: var(--space-4) var(--space-5);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-inset);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  transition: border-color var(--dur-fast) var(--ease-fluid);
+}
+
+.collab-field input:focus {
+  border-color: var(--accent);
+}
+
+.collab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.collab-hint {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  max-width: 62ch;
+}
+
+.collab-hint code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--surface-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-xs);
+}
+
+.collab-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+/* ------------------------------ o convite ----------------------------- */
+
+.collab-code-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+
+/* O código é lido em voz alta por telefone tão frequentemente quanto é
+   copiado. Fonte monoespaçada e espaçamento generoso são o que fazem um M
+   não virar N na leitura de quem está do outro lado. */
+.collab-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  background: var(--accent-quiet);
+  padding: var(--space-4) var(--space-6);
+  border-radius: var(--radius-md);
+  user-select: all;
+}
+
+.collab-address {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  color: var(--text-muted);
+}
+
+.collab-address-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  min-width: 6.5rem;
+}
+
+.collab-address-value {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text);
+  background: var(--surface-inset);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  white-space: nowrap;
+  user-select: all;
+}
+
+.collab-switch {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  margin-top: var(--space-5);
+  cursor: pointer;
+  font-size: var(--text-md);
+}
+
+.collab-switch input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.collab-switch em {
+  display: block;
+  font-style: normal;
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+  line-height: var(--leading-normal);
+  margin-top: var(--space-2);
+  max-width: 56ch;
+}
+
+.collab-tunnel-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  align-items: flex-start;
+  padding: var(--space-3) 0;
+}
+
+.collab-progress {
+  width: 100%;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.collab-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  transition: width var(--dur-normal) var(--ease-fluid);
+}
+
+/* --------------------------- gente na porta --------------------------- */
+
+/* Fundo âmbar: um pedido de entrada é a única coisa nesta tela que exige uma
+   decisão agora, e ele precisa se destacar das seções que só informam. */
+.collab-pending {
+  background: var(--warn-quiet);
+  border-radius: var(--radius-md);
+}
+
+.collab-pending-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) 0;
+}
+
+.collab-pending-name {
+  flex: 1;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+
+.collab-pending-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* ---------------------------- os terminais ---------------------------- */
+
+.collab-term-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.collab-term {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  transition: border-color var(--dur-fast) var(--ease-fluid);
+}
+
+/* Uma barra de acento à esquerda marca o que está exposto. É a informação
+   mais importante da lista e precisa ser legível de relance, sem ler texto. */
+.collab-term.on {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.collab-term-id {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+}
+
+.collab-term-title {
+  color: var(--text);
+  font-size: var(--text-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collab-term-dead {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  background: var(--surface-3);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.collab-term-modes {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* ---------------------------- participantes --------------------------- */
+
+.collab-people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.collab-person {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+}
+
+.collab-avatar {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-full);
+  color: var(--text-inverted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  flex-shrink: 0;
+}
+
+.collab-avatar.small {
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+}
+
+/* Quem caiu continua na lista, apagado: sumir com a pessoa faria uma
+   oscilação de rede parecer que ela foi embora. */
+.collab-avatar.off {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+.collab-person-name {
+  flex: 1;
+  font-size: var(--text-md);
+}
+
+.collab-person-name em {
+  display: block;
+  font-style: normal;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+
+.collab-kick {
+  flex-shrink: 0;
+}
+
+.collab-encerrar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+/* Aviso de pedido pendente no menu lateral, para o anfitrião notar mesmo com
+   a tela de compartilhamento fechada. */
+.nav-item-badge {
+  position: absolute;
+  top: 6px;
+  left: 26px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--warn);
+  color: var(--text-inverted);
+  font-size: 10px;
+  font-weight: var(--weight-strong);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+/* ========================= área do convidado ========================== */
+
+/* Enquanto se está na sala de outra pessoa, o que é da própria máquina sai
+   do caminho: abas locais, barra de projetos e os lançadores de shell não
+   têm o que fazer ali, e mantê-los na tela convidaria a abrir um terminal
+   local achando que se está abrindo um do anfitrião. O `main` local segue
+   montado (com `hidden`) para nenhum xterm ser destruído. */
+.app.guest-mode .tabbar,
+.app.guest-mode .workspace-sidebar,
+.app.guest-mode .launchers,
+.app.guest-mode .ai-panel,
+.app.guest-mode .notes-panel {
+  display: none;
+}
+
+.guest {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+  animation: jarvis-fade-in var(--dur-normal) var(--ease-fluid);
+}
+
+/* ------------------------------- a barra ------------------------------ */
+
+.guest-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: var(--border-width) solid var(--border);
+  background: var(--surface-1);
+  box-shadow: var(--sheen);
+  flex-shrink: 0;
+}
+
+.guest-bar.warn {
+  background: var(--warn-quiet);
+}
+
+.guest-bar-room {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-md);
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.guest-bar-room strong {
+  color: var(--text);
+  font-weight: var(--weight-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guest-bar-room em {
+  font-style: normal;
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.guest-bar-people {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.guest-bar-net {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: var(--numeric);
+  min-width: 6.5rem;
+  justify-content: flex-end;
+}
+
+/* A latência é o número que diz se a sessão está boa. Um ponto colorido
+   resolve isso sem exigir leitura: verde é imperceptível, âmbar já se
+   sente, vermelho atrapalha digitar. */
+.guest-ping {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--text-faint);
+}
+
+.guest-ping.good {
+  background: var(--ok);
+}
+
+.guest-ping.ok {
+  background: var(--warn);
+}
+
+.guest-ping.slow {
+  background: var(--danger);
+}
+
+/* ------------------------------- o corpo ------------------------------ */
+
+.guest-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.guest-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.guest-tabs {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5) 0;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.guest-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border: var(--border-width) solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--dur-fast) var(--ease-fluid),
+    color var(--dur-fast) var(--ease-fluid);
+}
+
+.guest-tab:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.guest-tab.on {
+  background: var(--surface-1);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.guest-tab-title {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.guest-tab-dead {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--danger);
+}
+
+.guest-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-4);
+}
+
+.guest-pane {
+  position: absolute;
+  inset: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-inset);
+  overflow: hidden;
+}
+
+.guest-pane[hidden] {
+  display: none;
+}
+
+/* O terminal ocupa o painel inteiro. `min-height: 0` é o que impede um
+   conteúdo alto de esticar o item de flex além do container — sem isso, a
+   última linha do terminal fica escondida sob a borda do painel. */
+.guest-pane .term-wrap {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Sobrepõem o terminal em vez de empurrá-lo: as duas telas têm que ter o
+   mesmo número de linhas, e uma faixa que ocupasse altura roubaria uma. */
+.guest-ro,
+.guest-dead {
+  position: absolute;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  pointer-events: none;
+}
+
+.guest-ro {
+  top: var(--space-4);
+  right: var(--space-4);
+  background: var(--surface-3);
+  color: var(--text-muted);
+}
+
+.guest-dead {
+  bottom: var(--space-4);
+  left: var(--space-4);
+  background: var(--danger-quiet);
+  color: var(--danger);
+}
+
+.guest-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-4);
+  height: 100%;
+  text-align: center;
+  color: var(--text-faint);
+  padding: var(--space-7);
+}
+
+.guest-empty h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+
+.guest-empty p {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  max-width: 42ch;
+}
+
+/* ------------------------------- lateral ------------------------------ */
+
+.guest-side {
+  display: flex;
+  flex-direction: column;
+  width: var(--ai-panel-width);
+  flex-shrink: 0;
+  border-left: var(--border-width) solid var(--border);
+  background: var(--surface-1);
+  min-height: 0;
+}
+
+.guest-side-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.guest-side-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.guest-side-tab.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.guest-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.guest-chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.guest-msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+.guest-msg.mine {
+  background: var(--accent-quiet);
+}
+
+.guest-msg.ai {
+  background: var(--surface-3);
+}
+
+.guest-msg-who {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  color: var(--text-faint);
+}
+
+.guest-msg-text {
+  color: var(--text);
+  /* A resposta da IA vem com quebras de linha significativas e pode conter
+     um comando longo; preservar as quebras e ainda assim quebrar palavras
+     imensas é o que evita a barra de rolagem horizontal. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.guest-ai-turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.guest-chat-input {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border-top: var(--border-width) solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.guest-chat-input input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-inset);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+}
+
+.guest-chat-input input:focus {
+  border-color: var(--accent);
+}
+
+/* Em tela estreita a lateral vira uma faixa embaixo: espremê-la ao lado
+   deixaria o terminal com menos colunas do que o do anfitrião, e o conteúdo
+   quebraria linha num lugar diferente do que ele está vendo. */
+@media (max-width: 900px) {
+  .guest-body {
+    flex-direction: column;
+  }
+
+  .guest-side {
+    width: auto;
+    max-height: 42%;
+    border-left: 0;
+    border-top: var(--border-width) solid var(--border);
+  }
+}

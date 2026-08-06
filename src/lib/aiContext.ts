@@ -39,6 +39,12 @@ export interface AiChatMessage extends AiMessage {
    * string dentro da resposta não permite.
    */
   error?: string;
+  /**
+   * Quem perguntou, quando a conversa é compartilhada com convidados. Ausente
+   * na conversa de sempre — o app não passa a rotular "você" em toda pergunta
+   * só porque a colaboração existe.
+   */
+  author?: { name: string; color: string };
 }
 
 /** Teto de caracteres do trecho de terminal enviado ao modelo. */
