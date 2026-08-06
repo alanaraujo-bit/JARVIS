@@ -143,6 +143,26 @@ pub fn transcript_clear(manager: State<'_, PtyManager>) -> Result<()> {
     transcritos(&manager)?.clear()
 }
 
+/// Como continuar a conversa de IA de uma gravação — `None` quando aquele
+/// terminal não tinha agente nenhum, ou quando o agente não guarda mais a
+/// conversa.
+///
+/// Consulta o disco (e, no caso do opencode, a CLI dele) a cada chamada em
+/// vez de guardar cache: o usuário pode ter apagado a conversa por fora, e um
+/// botão "continuar" que abre um erro é pior que um botão que não aparece.
+#[tauri::command(async)]
+pub fn agent_resume_probe(
+    manager: State<'_, PtyManager>,
+    id: String,
+) -> Result<Option<crate::agents::AgentResume>> {
+    let meta = transcritos(&manager)?
+        .list()
+        .into_iter()
+        .find(|m| m.id == id)
+        .ok_or_else(|| JarvisError::SessionNotFound(id.clone()))?;
+    Ok(crate::agents::resolver(&meta))
+}
+
 #[tauri::command(async)]
 pub fn shells_detect() -> Vec<ShellProfile> {
     crate::shells::detect()

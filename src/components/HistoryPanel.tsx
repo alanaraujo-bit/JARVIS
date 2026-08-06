@@ -20,13 +20,16 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 
 import {
+  agentResumeProbe,
   b64ToBytes,
   transcriptClear,
   transcriptDelete,
   transcriptList,
   transcriptRead,
+  type AgentResume,
   type TranscriptMeta,
 } from "../lib/ipc";
+import { explicaRetomada } from "../lib/agentResume";
 import {
   filterTranscripts,
   formatBytes,
@@ -43,8 +46,12 @@ import { Icon } from "./Icon";
 interface Props {
   open: boolean;
   onClose: () => void;
-  /** Abre um terminal novo na mesma pasta/shell/comando da sessão gravada. */
-  onReopen: (m: TranscriptMeta) => void;
+  /**
+   * Abre um terminal novo na mesma pasta/shell da sessão gravada. Com
+   * `resume`, ele nasce dentro da conversa de IA que estava rolando ali;
+   * sem, nasce limpo.
+   */
+  onReopen: (m: TranscriptMeta, resume?: AgentResume | null) => void;
 }
 
 export function HistoryPanel({ open, onClose, onReopen }: Props) {
@@ -54,6 +61,8 @@ export function HistoryPanel({ open, onClose, onReopen }: Props) {
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [confirmandoLimpeza, setConfirmandoLimpeza] = useState(false);
+  const [retomada, setRetomada] = useState<AgentResume | null>(null);
+  const [procurandoConversa, setProcurandoConversa] = useState(false);
 
   const caixaRef = useRef<HTMLDivElement | null>(null);
 
@@ -80,12 +89,58 @@ export function HistoryPanel({ open, onClose, onReopen }: Props) {
     caixaRef.current?.focus();
   }, [open, carregar]);
 
+  /**
+   * Procura, do lado do agente, a conversa que aconteceu naquela sessão.
+   *
+   * Roda a cada sessão escolhida em vez de uma vez para a lista inteira: a
+   * busca pode custar uma consulta a uma CLI externa (o `opencode` responde
+   * pelo próprio banco), e fazer isso para as 120 gravações do histórico
+   * seria uma tempestade de processos para responder a uma pergunta que o
+   * usuário fez sobre uma delas.
+   */
+  useEffect(() => {
+    if (!open || !selecionada) {
+      setRetomada(null);
+      return;
+    }
+    let descartado = false;
+    setRetomada(null);
+    setProcurandoConversa(true);
+    void agentResumeProbe(selecionada)
+      .then((r) => {
+        if (!descartado) setRetomada(r);
+      })
+      // Silêncio proposital: não achar como retomar é o caso comum (um
+      // terminal sem agente nenhum), e não vale uma faixa de erro. O botão
+      // de reabrir continua ali.
+      .catch(() => {})
+      .finally(() => {
+        if (!descartado) setProcurandoConversa(false);
+      });
+    return () => {
+      descartado = true;
+    };
+  }, [open, selecionada]);
+
   const filtrada = useMemo(() => filterTranscripts(lista, busca), [lista, busca]);
   const grupos = useMemo(() => groupByDay(filtrada), [filtrada]);
   const atual = useMemo(
     () => lista.find((m) => m.id === selecionada) ?? null,
     [lista, selecionada],
   );
+
+  /**
+   * A sessão ainda está rodando nesta execução do app.
+   *
+   * `endedAt` só fica em aberto enquanto o PTY vive: as pendências deixadas
+   * por uma queda são fechadas na abertura seguinte (ver
+   * `TranscriptStore::close_dangling`). Vale a distinção porque retomar uma
+   * conversa que já está aberta noutra aba poria dois agentes na mesma
+   * sessão, cada um gravando por cima do outro — o jeito de "voltar" para
+   * ela é a aba que já existe.
+   */
+  const aindaAberta = atual?.endedAt === null;
+  const podeRetomar = retomada !== null && !aindaAberta;
 
   const apagar = useCallback(
     async (id: string) => {
@@ -239,16 +294,58 @@ export function HistoryPanel({ open, onClose, onReopen }: Props) {
                       {" · "}
                       {formatBytes(atual.bytes)}
                     </span>
+                    {procurandoConversa && (
+                      <span className="history-retomada procurando">
+                        Procurando a conversa do agente...
+                      </span>
+                    )}
+                    {retomada && (
+                      <span
+                        className={`history-retomada ${retomada.exact ? "exata" : ""}`}
+                        title={
+                          aindaAberta
+                            ? "Esta conversa continua rodando numa aba aberta."
+                            : explicaRetomada(retomada)
+                        }
+                      >
+                        <Icon name="agent" size={12} />
+                        {retomada.label}
+                        {retomada.title ? ` · ${retomada.title}` : ""}
+                        {aindaAberta
+                          ? " · ainda aberta numa aba"
+                          : !retomada.exact && " · pela pasta e horário"}
+                      </span>
+                    )}
                   </div>
                   <div className="history-preview-actions">
-                    <button
-                      className="chip"
-                      onClick={() => onReopen(atual)}
-                      title="Abrir um terminal novo na mesma pasta, com o mesmo shell e comando"
-                    >
-                      <Icon name="terminal" size={13} />
-                      Reabrir terminal
-                    </button>
+                    {podeRetomar ? (
+                      <>
+                        <button
+                          className="chip primary"
+                          onClick={() => onReopen(atual, retomada)}
+                          title={explicaRetomada(retomada)}
+                        >
+                          <Icon name="terminal" size={13} />
+                          Continuar conversa
+                        </button>
+                        <button
+                          className="chip subtle"
+                          onClick={() => onReopen(atual, null)}
+                          title="Abrir um terminal novo na mesma pasta, sem retomar a conversa"
+                        >
+                          Abrir limpo
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="chip"
+                        onClick={() => onReopen(atual)}
+                        title="Abrir um terminal novo na mesma pasta, com o mesmo shell e comando"
+                      >
+                        <Icon name="terminal" size={13} />
+                        Reabrir terminal
+                      </button>
+                    )}
                     <button
                       className="chip subtle"
                       onClick={() => void apagar(atual.id)}

@@ -3508,6 +3508,41 @@ select {
   flex: 0 0 auto;
 }
 
+/* Linha que anuncia a conversa de IA encontrada para aquela gravação. Fica
+   junto dos metadados, e não dentro do botão: o botão diz o que vai
+   acontecer, esta linha diz com o quê. */
+.history-retomada {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--accent);
+  /* O título da conversa pode ser uma frase inteira; a linha corta em vez de
+     empurrar os botões de ação para fora da caixa. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.history-retomada.procurando {
+  color: var(--text-faint);
+}
+
+/* Chamada da ação principal do painel. Só o "continuar" a recebe: quando
+   existe uma conversa para retomar, ela é o motivo de o usuário ter aberto
+   o histórico. */
+.chip.primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: transparent;
+}
+
+.chip.primary:hover {
+  background: var(--accent-hover);
+  color: var(--accent-contrast);
+}
+
 .history-replay {
   flex: 1 1 auto;
   display: flex;

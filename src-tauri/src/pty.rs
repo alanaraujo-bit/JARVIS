@@ -498,6 +498,19 @@ impl PtyManager {
 
         self.sessions.lock().insert(id.clone(), Arc::clone(&session));
 
+        // Um comando de auto-início que sobe um agente de IA passa antes por
+        // `agents`: é lá que o `claude` ganha um `--session-id` próprio, o
+        // que permite a esta aba, meses depois, apontar exatamente qual
+        // conversa era a dela e continuá-la (ver `agents::resolver`).
+        let agente = opts
+            .initial_command
+            .as_deref()
+            .map(crate::agents::preparar_comando_inicial);
+        let comando_inicial = agente
+            .as_ref()
+            .map(|a| a.command.clone())
+            .or_else(|| opts.initial_command.clone());
+
         // A gravação nasce junto com a sessão, e não na primeira escrita: o
         // banner do shell e o comando de auto-início são justamente o começo
         // da conversa que se quer poder reler depois.
@@ -511,7 +524,17 @@ impl PtyManager {
                 profile_id: info.profile_id.clone(),
                 workspace_id: opts.workspace_id.clone(),
                 workspace_name: opts.workspace_name.clone(),
+                // O comando gravado é o que o usuário escreveu, e não o já
+                // preparado: o `--session-id` injetado pelo `agents` vive no
+                // campo próprio (`agent_session_id`), e repeti-lo aqui faria
+                // um "Reabrir terminal" — que usa este campo — reabrir a
+                // mesma conversa em vez de nascer limpa.
                 auto_command: opts.initial_command.clone(),
+                agent_kind: agente
+                    .as_ref()
+                    .and_then(|a| a.kind)
+                    .map(|k| k.as_str().to_string()),
+                agent_session_id: agente.as_ref().and_then(|a| a.session_id.clone()),
                 started_at: info.started_at,
                 ended_at: None,
                 exit_code: None,
@@ -526,7 +549,7 @@ impl PtyManager {
             Arc::clone(&session),
             reader,
             reader_done_tx,
-            opts.initial_command.clone(),
+            comando_inicial,
             gravacao,
         )?;
         self.start_waiter(id.clone(), session, child, reader_done_rx)?;

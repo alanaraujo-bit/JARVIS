@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod ai;
 pub mod claude_accounts;
 pub mod collab;
@@ -78,6 +79,7 @@ pub fn run() {
             commands::transcript_read,
             commands::transcript_delete,
             commands::transcript_clear,
+            commands::agent_resume_probe,
             commands::shells_detect,
             commands::app_home_dir,
             commands::config_load,

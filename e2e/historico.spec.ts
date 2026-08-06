@@ -72,8 +72,10 @@ test("a gravação sobrevive ao fechamento da aba — o motivo de tudo isto exis
     )
     .toContain("contexto que nao pode sumir");
 
-  // Fecha a aba: a sessão morre, o terminal some da tela.
-  await page.locator(".tab .x").first().click();
+  // Fecha a aba: a sessão morre, o terminal some da tela. O seletor exclui
+  // o botão de minimizar (`.x.minimize`, que vem antes no DOM): a aba
+  // precisa morrer de verdade para a gravação ser encerrada.
+  await page.locator(".tab .x:not(.minimize)").click();
   await expect(page.locator(".tab")).toHaveCount(0);
 
   await page.keyboard.press("Control+Shift+H");
@@ -104,7 +106,7 @@ test("a busca filtra a lista e o Esc fecha o painel", async ({ page }) => {
 test("reabrir uma sessão gravada cria uma aba na mesma pasta", async ({ page }) => {
   await abreTerminal(page);
   await digitaNoTerminal(page, "echo sessao original");
-  await page.locator(".tab .x").first().click();
+  await page.locator(".tab .x:not(.minimize)").click();
   await expect(page.locator(".tab")).toHaveCount(0);
 
   await page.keyboard.press("Control+Shift+H");
@@ -113,6 +115,62 @@ test("reabrir uma sessão gravada cria uma aba na mesma pasta", async ({ page })
   // O painel sai da frente e a aba nova assume.
   await expect(page.locator(".history")).toHaveCount(0);
   await expect(page.locator(".tab")).toHaveCount(1);
+});
+
+test("reabrir uma sessão de agente continua a conversa em vez de começar outra", async ({
+  page,
+}) => {
+  // Um workspace que sobe o `claude` sozinho — é assim que uma aba passa a
+  // ter uma conversa de IA vinculada a ela.
+  await page.evaluate(() => {
+    localStorage.setItem(
+      "jarvis-dev-config",
+      JSON.stringify({
+        workspaces: [
+          {
+            id: "ws-agente",
+            name: "Projeto com agente",
+            path: "C:\\Users\\dev\\projetos\\com-agente",
+            color: "#7aa2f7",
+            defaultProfileId: null,
+            autoCommand: "claude",
+            createdAt: Date.now(),
+          },
+        ],
+        activeWorkspaceId: "ws-agente",
+      }),
+    );
+  });
+  await abre(page);
+
+  await abreTerminal(page);
+  // O agente "sobe" com um id de sessão próprio (ver `agents::preparar_comando_inicial`).
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as unknown as { __jarvisTerminalText(): string }).__jarvisTerminalText(),
+      ),
+    )
+    .toContain("claude");
+
+  await page.locator(".tab .x:not(.minimize)").click();
+  await expect(page.locator(".tab")).toHaveCount(0);
+
+  await page.keyboard.press("Control+Shift+H");
+  // A conversa encontrada é anunciada antes de o usuário decidir.
+  await expect(page.locator(".history-retomada")).toBeVisible();
+  await page.getByRole("button", { name: "Continuar conversa" }).click();
+
+  await expect(page.locator(".history")).toHaveCount(0);
+  await expect(page.locator(".tab")).toHaveCount(1);
+  // O terminal novo nasce retomando a conversa, e não abrindo uma limpa.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as unknown as { __jarvisTerminalText(): string }).__jarvisTerminalText(),
+      ),
+    )
+    .toContain("--resume");
 });
 
 test("apagar uma gravação a tira da lista", async ({ page }) => {

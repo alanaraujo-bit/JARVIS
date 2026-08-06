@@ -41,6 +41,13 @@ interface FakeSession {
   buffer: string;
 }
 
+/** Versão enxuta do `AgentKind::from_command` do backend. */
+function agenteDoComando(cmd: string | null | undefined): string | null {
+  const primeiro = (cmd ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  const base = primeiro.split(/[\\/]/).pop()?.replace(/\.(exe|cmd|bat|ps1)$/, "") ?? "";
+  return ["claude", "opencode", "freebuff"].includes(base) ? base : null;
+}
+
 const PROFILES = [
   {
     id: "pwsh7",
@@ -283,6 +290,12 @@ export function installDevMock(): void {
           workspaceId: (opts.workspaceId as string | null) ?? null,
           workspaceName: (opts.workspaceName as string | null) ?? null,
           autoCommand: (opts.initialCommand as string | null) ?? null,
+          // Espelha o `agents::preparar_comando_inicial` do backend: é esse
+          // vínculo que faz o botão do histórico virar "Continuar conversa".
+          agentKind: agenteDoComando(opts.initialCommand as string | null),
+          agentSessionId: agenteDoComando(opts.initialCommand as string | null)
+            ? `mock-${proximoId}`
+            : null,
           startedAt: s.startedAt,
           endedAt: null,
           exitCode: null,
@@ -384,6 +397,34 @@ export function installDevMock(): void {
       if (!t) throw new Error(`sessão não encontrada: ${id}`);
       const bytes = encoder.encode(t.conteudo);
       return { b64: toB64(t.conteudo), totalBytes: bytes.length, truncated: false };
+    },
+
+    /**
+     * Simula a descoberta da conversa do agente. Sem depósito de agente
+     * nenhum aqui, o mock responde a partir do que o próprio spawn gravou:
+     * terminal que subiu um agente tem retomada, terminal comum não tem.
+     */
+    agent_resume_probe: (args) => {
+      const { id } = args as unknown as { id: string };
+      const meta = transcritos.get(id)?.meta as Record<string, unknown> | undefined;
+      const kind = meta?.agentKind as string | undefined;
+      if (!meta || !kind) return null;
+      const sessionId = (meta.agentSessionId as string | null) ?? null;
+      const retomar: Record<string, string> = {
+        claude: sessionId ? `claude --resume ${sessionId}` : "claude --continue",
+        opencode: sessionId ? `opencode --session ${sessionId}` : "opencode --continue",
+        freebuff: sessionId ? `freebuff --continue ${sessionId}` : "freebuff --continue",
+      };
+      return {
+        kind,
+        label: kind === "claude" ? "Claude Code" : kind,
+        sessionId,
+        title: "conversa simulada",
+        updatedAt: Date.now(),
+        command: retomar[kind] ?? kind,
+        configDir: null,
+        exact: sessionId !== null,
+      };
     },
 
     transcript_delete: (args) => {

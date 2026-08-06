@@ -93,6 +93,15 @@ pub struct TranscriptMeta {
     /// permite reabrir a sessão já com o agente subindo de novo.
     #[serde(default)]
     pub auto_command: Option<String>,
+    /// Agente de IA que este terminal subiu (`"claude"`, `"opencode"`,
+    /// `"freebuff"`), quando foi o JARVIS quem o iniciou.
+    #[serde(default)]
+    pub agent_kind: Option<String>,
+    /// Id da conversa daquele agente. É o que transforma "reabrir na mesma
+    /// pasta" em "continuar de onde paramos": sem ele, sobra adivinhar pela
+    /// pasta e pelo horário (ver `agents::resolver`).
+    #[serde(default)]
+    pub agent_session_id: Option<String>,
     #[serde(default)]
     pub started_at: u64,
     /// `None` = a gravação nunca foi encerrada (o app morreu sem passar por

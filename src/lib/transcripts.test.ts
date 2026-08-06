@@ -22,6 +22,8 @@ function meta(patch: Partial<TranscriptMeta> = {}): TranscriptMeta {
     workspaceId: null,
     workspaceName: null,
     autoCommand: null,
+    agentKind: null,
+    agentSessionId: null,
     startedAt: 1_700_000_000_000,
     endedAt: null,
     exitCode: null,

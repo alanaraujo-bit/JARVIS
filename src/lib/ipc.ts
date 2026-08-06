@@ -169,6 +169,10 @@ export interface TranscriptMeta {
   workspaceId: string | null;
   workspaceName: string | null;
   autoCommand: string | null;
+  /** Agente de IA que este terminal subiu, quando foi o JARVIS quem o subiu. */
+  agentKind: string | null;
+  /** Id da conversa daquele agente — o que permite continuá-la depois. */
+  agentSessionId: string | null;
   startedAt: number;
   /** `null` só enquanto a sessão está viva nesta execução. */
   endedAt: number | null;
@@ -190,6 +194,31 @@ export const transcriptList = () => invoke<TranscriptMeta[]>("transcript_list");
 
 export const transcriptRead = (id: string, maxBytes?: number) =>
   invoke<TranscriptData>("transcript_read", { id, maxBytes });
+
+/** Espelho de `AgentResume` em `src-tauri/src/agents.rs`. */
+export interface AgentResume {
+  kind: "claude" | "opencode" | "freebuff";
+  /** Nome do agente para mostrar na tela. */
+  label: string;
+  sessionId: string | null;
+  /** Primeira pergunta da conversa, para o usuário reconhecê-la. */
+  title: string | null;
+  updatedAt: number;
+  /** Linha pronta para o terminal novo (ex.: `claude --resume <id>`). */
+  command: string;
+  /** `CLAUDE_CONFIG_DIR` onde a conversa vive — a conta certa para retomar. */
+  configDir: string | null;
+  /** `true` = a conversa foi identificada pelo id; `false` = pela pasta e horário. */
+  exact: boolean;
+}
+
+/**
+ * Descobre como continuar a conversa de IA de uma gravação. `null` quando
+ * aquele terminal não tinha agente, ou quando a conversa não existe mais do
+ * lado do agente.
+ */
+export const agentResumeProbe = (id: string) =>
+  invoke<AgentResume | null>("agent_resume_probe", { id });
 
 export const transcriptDelete = (id: string) => invoke<void>("transcript_delete", { id });
 

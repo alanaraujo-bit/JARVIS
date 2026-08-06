@@ -38,7 +38,9 @@ import {
   nextActiveAfterHiding,
   visibleTabs as filtraVisiveis,
 } from "./lib/tabVisibility";
+import { contaDoConfigDir } from "./lib/agentResume";
 import {
+  agentResumeProbe,
   appHomeDir,
   configLoad,
   configSave,
@@ -50,6 +52,7 @@ import {
   ptySpawn,
   ptyWrite,
   shellsDetect,
+  type AgentResume,
   type SessionInfo,
   type ShellProfile,
   type TranscriptMeta,
@@ -701,7 +704,14 @@ export default function App() {
     [markHistoryEnded],
   );
 
-  /** Reabre um terminal a partir de uma entrada de recuperação (mesma pasta/comando de antes). */
+  /**
+   * Reabre um terminal a partir de uma entrada de recuperação.
+   *
+   * Uma queda leva a aba, não a conversa: o agente gravou o que foi dito do
+   * lado dele. Por isso a recuperação pergunta ao backend como retomar antes
+   * de abrir — quem perdeu o trabalho num Alt+F4 quer voltar para dentro da
+   * conversa, não para um prompt limpo na mesma pasta.
+   */
   const reopenRecovery = useCallback(
     async (entry: HistoryEntry) => {
       try {
@@ -709,7 +719,17 @@ export default function App() {
           profilesRef.current.find((p) => p.id === entry.profileId) ??
           profilesRef.current.find((p) => p.recommended) ??
           profilesRef.current[0];
-        const info = await spawnFor(profile, entry.cwd, entry.title, entry.autoCommand ?? undefined);
+        // Uma falha aqui não pode impedir a reabertura: sem retomada, o
+        // terminal volta como antes — que é exatamente o comportamento que
+        // existia até esta versão.
+        const resume = await agentResumeProbe(entry.id).catch(() => null);
+        const info = await spawnFor(
+          profile,
+          entry.cwd,
+          entry.title,
+          resume?.command ?? entry.autoCommand ?? undefined,
+          contaDoConfigDir(resume?.configDir, useAccountStore.getState().contas),
+        );
         const tab = newTabFromSession(info, entry.workspaceId);
         aplicaTabs((prev) => [...prev, tab]);
         setActiveTabId(tab.id);
@@ -724,23 +744,32 @@ export default function App() {
 
   /**
    * Abre um terminal novo a partir de uma sessão gravada: mesma pasta, mesmo
-   * shell, mesmo comando de auto-início.
+   * shell — e, quando havia um agente de IA ali, dentro da mesma conversa.
    *
-   * O que não volta é o processo — aquele morreu junto com a sessão original,
-   * e nada aqui pode ressuscitá-lo. O que volta é o ponto de partida: uma CLI
-   * que guarda o próprio estado (o `claude`, por exemplo) reencontra a
-   * conversa dela ao subir na mesma pasta, e o texto do que aconteceu antes
-   * continua legível no painel de histórico ao lado.
+   * O processo não volta: aquele morreu junto com a sessão original. Mas a
+   * conversa não vivia no processo, e sim no depósito do agente; `resume`
+   * (vindo de `agent_resume_probe`) traz a linha que a reabre pelo id — e a
+   * conta em que ela foi gravada, porque um `--resume` na conta errada
+   * procuraria uma sessão que não existe lá.
+   *
+   * Sem `resume`, o comportamento é o de antes: mesma pasta, mesmo comando
+   * de auto-início, conversa nova.
    */
   const reopenFromHistory = useCallback(
-    async (m: TranscriptMeta) => {
+    async (m: TranscriptMeta, resume?: AgentResume | null) => {
       try {
         const profile =
           profilesRef.current.find((p) => p.id === m.profileId) ??
           profilesRef.current.find((p) => p.program === m.program) ??
           profilesRef.current.find((p) => p.recommended) ??
           profilesRef.current[0];
-        const info = await spawnFor(profile, m.cwd, m.title, m.autoCommand ?? undefined);
+        const info = await spawnFor(
+          profile,
+          m.cwd,
+          m.title,
+          resume?.command ?? m.autoCommand ?? undefined,
+          contaDoConfigDir(resume?.configDir, useAccountStore.getState().contas),
+        );
         const tab = newTabFromSession(info, m.workspaceId);
         aplicaTabs((prev) => [...prev, tab]);
         setActiveTabId(tab.id);
@@ -1980,7 +2009,7 @@ export default function App() {
       <HistoryPanel
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
-        onReopen={(m) => void reopenFromHistory(m)}
+        onReopen={(m, resume) => void reopenFromHistory(m, resume)}
       />
       <UpdatePanel />
       <AccountsPanel onEntrar={(c) => void entrarNaConta(c)} />
