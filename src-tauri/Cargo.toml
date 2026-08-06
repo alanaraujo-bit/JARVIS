@@ -1,6 +1,6 @@
 [package]
 name = "jarvis"
-version = "0.8.0"
+version = "0.9.0"
 description = "JARVIS - central de terminais e agentes de IA para Windows"
 authors = ["Alan"]
 edition = "2021"
