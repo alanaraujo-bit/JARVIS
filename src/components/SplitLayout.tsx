@@ -3,11 +3,13 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
 import type { SessionInfo } from "../lib/ipc";
 import type { PaneNode } from "../lib/layout";
+import { useAccountStore } from "../stores/accountStore";
 import { TerminalView } from "./TerminalView";
 import { Icon } from "./Icon";
 
@@ -16,10 +18,15 @@ interface Props {
   activePaneId: string;
   sessions: Readonly<Record<string, SessionInfo>>;
   paneCount: number;
+  /** Conta do Claude Code usada por cada sessão viva, para colorir o seletor. */
+  contaDaSessao: Readonly<Record<string, string>>;
   onFocusPane: (paneId: string) => void;
   onResize: (splitId: string, sizes: number[]) => void;
   onClosePane: (paneId: string) => void;
   onRestartPane: (paneId: string) => void;
+  /** Troca a conta do painel sem fechar a aba — reinicia o shell dele e, se
+   * havia uma conversa de IA rodando ali, retoma ela na conta nova. */
+  onSwitchAccount: (paneId: string, accountId: string) => void;
 }
 
 const MIN_FRACTION = 0.08;
@@ -37,10 +44,12 @@ export function SplitLayout({
   activePaneId,
   sessions,
   paneCount,
+  contaDaSessao,
   onFocusPane,
   onResize,
   onClosePane,
   onRestartPane,
+  onSwitchAccount,
 }: Props) {
   if (node.type === "leaf") {
     const info = sessions[node.sessionId];
@@ -72,6 +81,12 @@ export function SplitLayout({
             <Icon name="folder" size={12} />
             <span className="pane-cwd-label">{folderLabel(info.cwd)}</span>
           </span>
+        )}
+        {info && !dead && (
+          <PaneAccountSwitch
+            contaId={contaDaSessao[node.sessionId]}
+            onSwitch={(accountId) => onSwitchAccount(node.id, accountId)}
+          />
         )}
         {unjobbed && !dead && (
           <span
@@ -122,10 +137,12 @@ export function SplitLayout({
       activePaneId={activePaneId}
       sessions={sessions}
       paneCount={paneCount}
+      contaDaSessao={contaDaSessao}
       onFocusPane={onFocusPane}
       onResize={onResize}
       onClosePane={onClosePane}
       onRestartPane={onRestartPane}
+      onSwitchAccount={onSwitchAccount}
     />
   );
 }
@@ -144,10 +161,12 @@ function SplitBranch({
   activePaneId,
   sessions,
   paneCount,
+  contaDaSessao,
   onFocusPane,
   onResize,
   onClosePane,
   onRestartPane,
+  onSwitchAccount,
 }: Props & { node: Extract<PaneNode, { type: "split" }> }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{ index: number; startPos: number; startSizes: number[] } | null>(null);
@@ -223,10 +242,12 @@ function SplitBranch({
               activePaneId={activePaneId}
               sessions={sessions}
               paneCount={paneCount}
+              contaDaSessao={contaDaSessao}
               onFocusPane={onFocusPane}
               onResize={onResize}
               onClosePane={onClosePane}
               onRestartPane={onRestartPane}
+              onSwitchAccount={onSwitchAccount}
             />
           </div>
           {i < node.children.length - 1 && (
@@ -244,6 +265,88 @@ function SplitBranch({
           )}
         </Fragment>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Bolinha discreta no canto do painel, na cor da conta em uso. Clicar abre a
+ * lista de contas cadastradas; escolher uma diferente aciona `onSwitch`.
+ *
+ * Não existe forma de trocar a variável de ambiente de um processo já vivo —
+ * quem chama `onSwitch` é responsável por reiniciar o shell na conta nova
+ * (e, quando dá, retomar a conversa de IA que estava rodando ali). Este
+ * componente só escolhe a conta; não sabe nada sobre reiniciar painel.
+ */
+function PaneAccountSwitch({
+  contaId,
+  onSwitch,
+}: {
+  contaId: string | undefined;
+  onSwitch: (accountId: string) => void;
+}) {
+  const contas = useAccountStore((s) => s.contas);
+  const [aberto, setAberto] = useState(false);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!aberto) return;
+    // Clique fora fecha — o menu não tem um botão "cancelar" próprio.
+    const onDocDown = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setAberto(false);
+    };
+    document.addEventListener("mousedown", onDocDown);
+    return () => document.removeEventListener("mousedown", onDocDown);
+  }, [aberto]);
+
+  // Sem conta cadastrada não há o que trocar — nem vale ocupar o canto do
+  // painel com um botão que não faz nada.
+  if (contas.length === 0) return null;
+
+  const atual = contas.find((c) => c.id === contaId);
+
+  return (
+    <div className="pane-account" ref={boxRef}>
+      <button
+        className={`pane-account-btn ${aberto ? "open" : ""}`}
+        style={atual ? { borderColor: atual.color } : undefined}
+        title={
+          atual
+            ? `Conta do Claude Code: ${atual.name} — clique para trocar`
+            : "Trocar a conta do Claude Code deste painel"
+        }
+        aria-label="Trocar conta do Claude Code"
+        aria-haspopup="true"
+        aria-expanded={aberto}
+        onClick={(e) => {
+          e.stopPropagation();
+          setAberto((v) => !v);
+        }}
+      >
+        <span
+          className="pane-account-dot"
+          style={{ background: atual?.color ?? "var(--text-muted)" }}
+        />
+      </button>
+      {aberto && (
+        <ul className="pane-account-menu" role="menu" onMouseDown={(e) => e.stopPropagation()}>
+          {contas.map((c) => (
+            <li key={c.id} role="none">
+              <button
+                role="menuitem"
+                className={`pane-account-item ${c.id === contaId ? "active" : ""}`}
+                onClick={() => {
+                  setAberto(false);
+                  if (c.id !== contaId) onSwitch(c.id);
+                }}
+              >
+                <span className="pane-account-dot" style={{ background: c.color }} />
+                {c.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

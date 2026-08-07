@@ -16,8 +16,8 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { useCollabStore } from "../stores/collabStore";
 import type { SessionInfo } from "../lib/ipc";
-import type { TunnelState } from "../lib/collabIpc";
-import type { SharedTerminal } from "../lib/collabProtocol";
+import { collabInviteQr, type HostRoom, type QrCode, type TunnelState } from "../lib/collabIpc";
+import { inviteUrl, type SharedTerminal } from "../lib/collabProtocol";
 import { writeClipboardText } from "../lib/clipboard";
 
 interface Props {
@@ -187,6 +187,99 @@ function PainelAnfitriao({ sessions }: { sessions: SessionInfo[] }) {
   );
 }
 
+/**
+ * O convite em forma de câmera: aponta e entra.
+ *
+ * O endereço do túnel é sorteado a cada sessão e tem doze caracteres
+ * aleatórios no meio — digitá-lo num celular é um exercício de paciência com
+ * erro quase garantido, e o código de oito caracteres ainda viria depois. O QR
+ * carrega os dois de uma vez, e o app do celular entra sozinho.
+ */
+function QrConvite({ room }: { room: HostRoom }) {
+  const url = inviteUrl(room.publicUrl ?? room.lanUrl, room.code);
+  const [qr, setQr] = useState<QrCode | null>(null);
+
+  useEffect(() => {
+    if (!url) {
+      setQr(null);
+      return;
+    }
+    let vivo = true;
+    void collabInviteQr(url)
+      .then((q) => vivo && setQr(q))
+      .catch(() => vivo && setQr(null));
+    return () => {
+      vivo = false;
+    };
+  }, [url]);
+
+  if (!url) {
+    return (
+      <p className="collab-hint">
+        Sem endereço ainda: ligue o endereço público abaixo, ou conecte esta
+        máquina a uma rede, para o celular ter onde chegar.
+      </p>
+    );
+  }
+
+  const noAr = room.publicUrl !== null;
+
+  return (
+    <div className="collab-qr">
+      {qr ? <QrDesenho qr={qr} /> : <div className="collab-qr-vazio" />}
+      <div className="collab-qr-texto">
+        <strong>Abra no celular</strong>
+        <p>
+          Aponte a câmera. O aparelho abre o JARVIS pelo navegador, já com o
+          código preenchido, e você pode instalar como aplicativo pelo menu
+          &ldquo;adicionar à tela de início&rdquo;.
+        </p>
+        <p className="collab-qr-alcance">
+          {noAr
+            ? "Endereço público: funciona de qualquer lugar, com este computador ligado."
+            : "Rede local: funciona no mesmo Wi-Fi. Para usar fora de casa, ligue o endereço público abaixo."}
+        </p>
+        <button className="chip subtle" onClick={() => void writeClipboardText(url)}>
+          <Icon name="copy" size={13} />
+          Copiar o link
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A matriz vira um `<path>` só, e não um `<rect>` por módulo.
+ *
+ * Um QR deste tamanho tem por volta de mil módulos escuros. Mil elementos no
+ * DOM, recriados sempre que a sala muda de estado, custariam mais do que o
+ * painel inteiro em volta — e o desenho é exatamente o mesmo.
+ */
+function QrDesenho({ qr }: { qr: QrCode }) {
+  const { size, modules } = qr;
+  let d = "";
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (modules[y * size + x]) d += `M${x} ${y}h1v1h-1z`;
+    }
+  }
+  // A margem de 4 módulos não é estética: sem a "zona silenciosa" que a norma
+  // exige, muitos leitores simplesmente não reconhecem o código.
+  const m = 4;
+  return (
+    <svg
+      className="collab-qr-img"
+      viewBox={`${-m} ${-m} ${size + m * 2} ${size + m * 2}`}
+      shapeRendering="crispEdges"
+      role="img"
+      aria-label="Código QR com o endereço e o código da sala"
+    >
+      <rect x={-m} y={-m} width={size + m * 2} height={size + m * 2} fill="#ffffff" />
+      <path d={d} fill="#0b0f14" />
+    </svg>
+  );
+}
+
 function SalaAberta({ sessions }: { sessions: SessionInfo[] }) {
   const room = useCollabStore((s) => s.host.room!);
   const share = useCollabStore((s) => s.share);
@@ -220,6 +313,8 @@ function SalaAberta({ sessions }: { sessions: SessionInfo[] }) {
             Código
           </button>
         </div>
+
+        <QrConvite room={room} />
 
         <Endereco rotulo="Rede local" valor={room.lanUrl} icone="monitor" />
         <Tunel

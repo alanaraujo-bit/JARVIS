@@ -10,24 +10,34 @@
 //! O que um convidado consegue fazer aqui é curto de propósito, e vale a pena
 //! ler a lista inteira: mandar teclas para um terminal que já estava
 //! compartilhado em modo `rw`, pedir o estado da tela de um terminal
-//! compartilhado, mandar chat, perguntar à IA e medir latência. Não existe
-//! comando para abrir terminal, executar programa, ler arquivo, listar pasta
-//! ou mudar a própria permissão.
+//! compartilhado, ajustar o tamanho dele à tela do próprio aparelho, mandar
+//! chat, perguntar à IA e medir latência. Não existe comando para abrir
+//! terminal, executar programa, ler arquivo, listar pasta ou mudar a própria
+//! permissão.
+//!
+//! A mesma porta serve duas coisas diferentes, e a distinção é feita no
+//! primeiro byte: um pedido com `Upgrade: websocket` é um convidado; qualquer
+//! outro é um navegador querendo o PWA, e vai para [`webapp`]. É o que
+//! permite o celular abrir o endereço do túnel, instalar o app e conectar de
+//! volta na mesma origem, sem CORS e sem segundo servidor.
 
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::protocol::{
-    frame_com_seq, parse_input, ClientMsg, ServerMsg, OP_SNAPSHOT, PROTOCOL_VERSION,
+    frame_com_seq, parse_input, ClientMsg, ServerMsg, FIT_COLS, FIT_ROWS, OP_SNAPSHOT,
+    PROTOCOL_VERSION,
 };
+use super::webapp;
 use super::{CollabHub, Out};
 use crate::protocol::Snapshot;
 
@@ -45,6 +55,15 @@ pub trait PtyAccess: Send + Sync + 'static {
     fn write(&self, session_id: &str, bytes: &[u8]);
     /// Estado atual da tela, para o convidado nascer com o que já estava lá.
     fn snapshot(&self, session_id: &str) -> Option<Snapshot>;
+    /// Registra a tela do convidado como mais um painel da sessão. O tamanho
+    /// que vale continua sendo o menor entre todos os painéis — quem decide
+    /// isso é o motor de PTY, não o convidado.
+    fn fit(&self, session_id: &str, view_id: &str, cols: u16, rows: u16);
+    /// Tira o painel do convidado da conta. Chamado quando ele desiste do
+    /// ajuste e, obrigatoriamente, quando a conexão dele morre — sem isso o
+    /// terminal do anfitrião ficaria estreito para sempre depois que alguém
+    /// olhasse do celular e fechasse o app.
+    fn unfit(&self, session_id: &str, view_id: &str);
 }
 
 /// Quanto tempo uma conexão tem para se apresentar antes de ser cortada.
@@ -59,27 +78,6 @@ const PRAZO_APROVACAO: Duration = Duration::from_secs(180);
 /// Intervalo do ping de protocolo. Serve para descobrir uma conexão morta que
 /// o TCP ainda não notou — comum quando um notebook fecha a tampa.
 const PING: Duration = Duration::from_secs(20);
-
-/// Página mínima para quem abrir o endereço no navegador. Isso acontece de
-/// verdade: o túnel devolve uma URL `https://…` e é natural clicar nela. Sem
-/// resposta nenhuma, a pessoa veria um erro de conexão e concluiria que a
-/// sala está quebrada.
-const PAGINA: &str = "\
-<!doctype html><html lang=pt-BR><meta charset=utf-8>
-<meta name=viewport content=\"width=device-width,initial-scale=1\">
-<title>JARVIS · trabalho compartilhado</title>
-<style>
-body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0f14;
-color:#e6edf3;font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif}
-main{max-width:34rem;padding:2rem;text-align:center}
-h1{font-size:1.35rem;margin:0 0 .75rem;letter-spacing:-.01em}
-p{margin:0 0 .5rem;color:#9aa7b4}
-code{background:#161b22;padding:.15rem .4rem;border-radius:.35rem;color:#5eead4}
-</style>
-<main><h1>Esta sala é do JARVIS</h1>
-<p>O endereço está no ar, mas quem entra aqui é o aplicativo, não o navegador.</p>
-<p>Abra o JARVIS, vá em <code>Compartilhar</code> &rsaquo; <code>Entrar numa sala</code>
-e cole este endereço junto com o código que o anfitrião passou.</p></main>";
 
 /// Sobe o listener e devolve a porta que o sistema de fato abriu.
 ///
@@ -126,6 +124,15 @@ struct Conn {
     /// Só depois de aprovado é que quadros da sala começam a fluir.
     aprovado: AtomicBool,
     id: RwLock<String>,
+    /// Identidade desta conexão perante o motor de PTY, para o ajuste de
+    /// tamanho. É por conexão e não por participante de propósito: a mesma
+    /// pessoa pode estar no celular e no computador ao mesmo tempo, e as duas
+    /// telas têm larguras diferentes que precisam ser contadas em separado.
+    view_id: String,
+    /// Terminais que esta conexão está ajustando agora. Existe para o
+    /// desligamento saber o que desfazer — o convidado que perde o Wi-Fi não
+    /// manda `unfit` nenhum.
+    ajustados: Mutex<HashSet<String>>,
 }
 
 type Erro = Box<dyn std::error::Error + Send + Sync>;
@@ -141,8 +148,11 @@ async fn atender(
     // atraso que se sente ao digitar.
     let _ = stream.set_nodelay(true);
 
+    // Um navegador chegando nesta porta não é engano: é o caminho normal do
+    // celular. Ele recebe o PWA; o WebSocket que a página abre em seguida
+    // volta para cá pelo outro ramo.
     if !é_upgrade(&stream).await {
-        responder_pagina(stream).await;
+        webapp::atender(stream).await;
         return Ok(());
     }
 
@@ -152,6 +162,8 @@ async fn atender(
     let conn = Arc::new(Conn {
         aprovado: AtomicBool::new(false),
         id: RwLock::new(String::new()),
+        view_id: format!("collab:{}", uuid::Uuid::new_v4()),
+        ajustados: Mutex::new(HashSet::new()),
     });
 
     // Fila privada desta conexão, para o que não é da sala inteira.
@@ -313,16 +325,30 @@ async fn atender(
                 let Ok(msg) = serde_json::from_str::<ClientMsg>(&t) else {
                     continue;
                 };
-                tratar_mensagem(msg, &meu_id, &hub, pty.as_ref(), &direto_tx).await;
+                tratar_mensagem(msg, &meu_id, &hub, pty.as_ref(), &direto_tx, &conn).await;
             }
             Message::Close(_) => break,
             _ => {}
         }
     }
 
+    soltar_ajustes(&conn, pty.as_ref());
     hub.on_disconnect(&meu_id);
     finalizar(escritor, &direto_tx).await;
     Ok(())
+}
+
+/// Devolve ao anfitrião o tamanho dos terminais que esta conexão estreitou.
+///
+/// Roda no caminho de saída **qualquer que ele seja** — sair pela porta,
+/// perder a rede, ser expulso. É a diferença entre um ajuste e um dano: sem
+/// isto, um celular que ficou sem bateria deixaria o terminal do anfitrião
+/// preso em 50 colunas sem nada na tela explicando por quê.
+fn soltar_ajustes(conn: &Conn, pty: &dyn PtyAccess) {
+    let ids: Vec<String> = conn.ajustados.lock().drain().collect();
+    for id in ids {
+        pty.unfit(&id, &conn.view_id);
+    }
 }
 
 /* ----------------------------- tratamento ------------------------------- */
@@ -351,6 +377,7 @@ async fn tratar_mensagem(
     hub: &CollabHub,
     pty: &dyn PtyAccess,
     direto: &mpsc::Sender<Message>,
+    conn: &Conn,
 ) {
     match msg {
         ClientMsg::Chat { text } => {
@@ -384,6 +411,31 @@ async fn tratar_mensagem(
                     rows,
                 })
                 .await;
+            }
+        }
+        ClientMsg::Fit {
+            session_id,
+            cols,
+            rows,
+        } => {
+            // Mesma guarda da tecla, e pela mesma razão: encolher o terminal
+            // de alguém é mexer no terminal de alguém. Quem só assiste não
+            // muda o que os outros veem.
+            match hub.modo(&session_id) {
+                Some(m) if m.pode_escrever() => {}
+                _ => return,
+            }
+            let cols = cols.clamp(*FIT_COLS.start(), *FIT_COLS.end());
+            let rows = rows.clamp(*FIT_ROWS.start(), *FIT_ROWS.end());
+            conn.ajustados.lock().insert(session_id.clone());
+            pty.fit(&session_id, &conn.view_id, cols, rows);
+        }
+        ClientMsg::Unfit { session_id } => {
+            // Sem guarda de modo: parar de ajustar só devolve espaço, e uma
+            // permissão revogada no meio do caminho não pode ser motivo para
+            // o terminal do anfitrião ficar estreito para sempre.
+            if conn.ajustados.lock().remove(&session_id) {
+                pty.unfit(&session_id, &conn.view_id);
             }
         }
         ClientMsg::Hello { .. } => {}
@@ -476,18 +528,6 @@ async fn é_upgrade(stream: &TcpStream) -> bool {
     false
 }
 
-async fn responder_pagina(mut stream: TcpStream) {
-    use tokio::io::AsyncWriteExt;
-    let resposta = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\
-         Content-Length: {}\r\nConnection: close\r\n\r\n{}",
-        PAGINA.len(),
-        PAGINA
-    );
-    let _ = stream.write_all(resposta.as_bytes()).await;
-    let _ = stream.shutdown().await;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,12 +546,18 @@ mod tests {
         }
     }
 
+    fn conn(id: &str, aprovado: bool) -> Conn {
+        Conn {
+            aprovado: AtomicBool::new(aprovado),
+            id: RwLock::new(id.into()),
+            view_id: "collab:teste".into(),
+            ajustados: Mutex::new(HashSet::new()),
+        }
+    }
+
     #[test]
     fn endereçada_so_chega_a_quem_e_dela() {
-        let conn = Conn {
-            aprovado: AtomicBool::new(true),
-            id: RwLock::new("abc".into()),
-        };
+        let conn = conn("abc", true);
         let minha = Out::Text("@abc\n{\"t\":\"pong\"}".into());
         let alheia = Out::Text("@xyz\n{\"t\":\"pong\"}".into());
         assert!(filtrar(&minha, &conn).is_some());
@@ -520,10 +566,7 @@ mod tests {
 
     #[test]
     fn nada_flui_antes_da_aprovacao() {
-        let conn = Conn {
-            aprovado: AtomicBool::new(false),
-            id: RwLock::new("abc".into()),
-        };
+        let conn = conn("abc", false);
         assert!(
             filtrar(&Out::Bin(vec![1, 2, 3]), &conn).is_none(),
             "bytes de terminal vazaram para quem ainda espera aprovação"

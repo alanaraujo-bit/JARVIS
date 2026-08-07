@@ -449,6 +449,29 @@ pub fn claude_default_login_exists() -> bool {
         .unwrap_or(false)
 }
 
+/// Espelho de `SwitchAccountOptions` em `src/lib/ipc.ts`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrateSessionOptions {
+    /// `None` = a instalação padrão da CLI (`~/.claude`).
+    pub from_config_dir: Option<String>,
+    pub to_config_dir: String,
+    pub cwd: String,
+    pub session_id: String,
+}
+
+/// Copia a conversa de uma conta para outra, para trocar a conta de um
+/// painel já aberto sem perder a conversa — ver `claude_accounts::migrate_session`.
+#[tauri::command(async)]
+pub fn claude_account_migrate_session(opts: MigrateSessionOptions) -> Result<()> {
+    crate::claude_accounts::migrate_session(
+        opts.from_config_dir.as_deref(),
+        &opts.to_config_dir,
+        &opts.cwd,
+        &opts.session_id,
+    )
+}
+
 /* ------------------------- trabalho compartilhado ------------------------ */
 
 use crate::collab::protocol::{AiEvent, Mode, SharedTerminal};
@@ -473,6 +496,24 @@ impl server::PtyAccess for PtyDoApp {
         self.0
             .try_state::<PtyManager>()
             .and_then(|pty| pty.snapshot(session_id).ok())
+    }
+
+    /// O celular entra na mesma negociação de tamanho que os painéis locais.
+    ///
+    /// Reusar `resize`/`detach_view` em vez de criar um caminho próprio não é
+    /// preguiça: o consenso (o PTY fica do tamanho do menor painel) já é a
+    /// regra da casa, e um caminho paralelo teria que reimplementá-la e
+    /// divergir dela na primeira mudança.
+    fn fit(&self, session_id: &str, view_id: &str, cols: u16, rows: u16) {
+        if let Some(pty) = self.0.try_state::<PtyManager>() {
+            let _ = pty.resize(session_id, view_id, cols, rows);
+        }
+    }
+
+    fn unfit(&self, session_id: &str, view_id: &str) {
+        if let Some(pty) = self.0.try_state::<PtyManager>() {
+            let _ = pty.detach_view(session_id, view_id);
+        }
     }
 }
 
@@ -608,6 +649,42 @@ pub fn collab_ai_ask(hub: State<'_, Arc<CollabHub>>, text: String) {
 #[tauri::command(async)]
 pub fn collab_ai_relay(hub: State<'_, Arc<CollabHub>>, event: AiEvent) {
     hub.ai_relay(event);
+}
+
+/* -------------------------------- convite -------------------------------- */
+
+/// Um QR pronto para desenhar: `size` × `size` módulos, linha a linha.
+///
+/// A matriz atravessa o IPC crua, e não como imagem. Gerar um PNG ou um SVG
+/// aqui obrigaria o WebView a decodificar de volta algo que ele vai redesenhar
+/// de qualquer jeito, e ainda travaria a aparência do QR no Rust — a cor, o
+/// cantinho arredondado e o tamanho pertencem à tela, não ao gerador.
+#[derive(Debug, serde::Serialize)]
+pub struct QrCode {
+    pub size: usize,
+    /// `true` é módulo escuro. Em ordem de leitura, linha por linha.
+    pub modules: Vec<bool>,
+}
+
+/// Codifica um texto curto (o endereço da sala com o código) em QR.
+///
+/// Nível de correção M: o QR vai ser lido de uma tela iluminada a meio metro
+/// de distância, não impresso numa caixa que amassa. Subir para Q ou H só
+/// aumentaria a densidade dos módulos, e módulo pequeno em tela pequena é o
+/// que de fato faz a câmera falhar.
+#[tauri::command(async)]
+pub fn collab_invite_qr(text: String) -> Result<QrCode> {
+    use qrcode::{EcLevel, QrCode as Gerador};
+
+    let qr = Gerador::with_error_correction_level(text.as_bytes(), EcLevel::M)
+        .map_err(|e| JarvisError::ConfigIo(format!("não consegui gerar o QR: {e}")))?;
+    let size = qr.width();
+    let modules = qr
+        .to_colors()
+        .into_iter()
+        .map(|c| c == qrcode::Color::Dark)
+        .collect();
+    Ok(QrCode { size, modules })
 }
 
 /* ------------------------------- túnel ---------------------------------- */

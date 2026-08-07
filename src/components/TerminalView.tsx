@@ -168,6 +168,12 @@ export function TerminalView({
       const key = `${term.cols}x${term.rows}`;
       if (key === lastSent) return;
       lastSent = key;
+      // `fit()` já reflui o xterm localmente, antes de o backend confirmar
+      // nada — é aqui, alargando, que aparecem células novas que o WebGL
+      // pode preencher com lixo de um frame anterior em vez de deixar em
+      // branco. Ver o comentário no `refresh` de baixo para o resto da
+      // história.
+      term.refresh(0, term.rows - 1);
       void canalRef.current
         .resize(viewId, term.cols, term.rows)
         .then((agreed) => {
@@ -180,6 +186,13 @@ export function TerminalView({
           if (agreed.cols !== term.cols || agreed.rows !== term.rows) {
             term.resize(agreed.cols, agreed.rows);
             lastSent = `${agreed.cols}x${agreed.rows}`;
+            // As células que o alargamento expõe às vezes chegam com lixo do
+            // renderizador WebGL — sobras de um frame anterior, não
+            // conteúdo real do PTY. `refresh` força repintar tudo de novo,
+            // o que basta pra sumir; sem isto, o lixo só desaparecia quando
+            // outro resize (normalmente estreitar) provocava um repaint por
+            // acidente — daí parecer "só bug visual" e ir embora sozinho.
+            term.refresh(0, term.rows - 1);
           }
         })
         .catch(() => {});
@@ -194,6 +207,7 @@ export function TerminalView({
       if (disposed) return;
       term.resize(cols, rows);
       lastSent = `${cols}x${rows}`;
+      term.refresh(0, term.rows - 1);
     });
 
     const scheduleSync = () => {

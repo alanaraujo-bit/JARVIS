@@ -20,7 +20,11 @@ use serde::{Deserialize, Serialize};
 /// Sobe quando o formato deixa de ser compatível com a versão anterior.
 /// O convidado manda a dele no `hello`; o anfitrião recusa o que não bate,
 /// com uma mensagem que diz qual dos dois precisa atualizar.
-pub const PROTOCOL_VERSION: u32 = 1;
+///
+/// v2: `fit`/`unfit` — o convidado pode registrar o tamanho de tela dele
+/// como mais um "painel" da sessão. Nasceu do celular, onde 80 colunas ou
+/// são ilegíveis ou exigem rolagem lateral a cada linha.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /* ----------------------------- quadros binários ------------------------- */
 
@@ -230,7 +234,38 @@ pub enum ClientMsg {
     #[serde(rename_all = "camelCase")]
     Snapshot { session_id: String },
     Ping { t0: u64 },
+    /// "Este terminal cabe em tantas colunas na minha tela."
+    ///
+    /// O convidado entra na mesma negociação de tamanho que os painéis do
+    /// anfitrião já fazem entre si: o PTY recebe o **menor** tamanho entre
+    /// todos os painéis abertos, porque desenhar 80 colunas num painel de 50
+    /// quebraria linha no lugar errado para alguém. Um celular é só mais um
+    /// painel, estreito.
+    ///
+    /// A consequência é real e o convidado precisa pedir por ela
+    /// explicitamente: enquanto ele estiver ajustado, o terminal encolhe
+    /// **também na tela do anfitrião**. Só quem tem `rw` pode — mudar o
+    /// tamanho de um terminal é mexer nele.
+    #[serde(rename_all = "camelCase")]
+    Fit {
+        session_id: String,
+        cols: u16,
+        rows: u16,
+    },
+    /// Desiste do ajuste: o terminal volta ao tamanho que os painéis do
+    /// anfitrião pedem. Sair da sala tem o mesmo efeito.
+    #[serde(rename_all = "camelCase")]
+    Unfit { session_id: String },
 }
+
+/// Limites do que um convidado pode pedir de tamanho.
+///
+/// O teto não é sobre memória — é sobre o anfitrião: sem ele, um convidado
+/// mandaria `cols: 1` e deixaria o terminal do outro inutilizável com uma
+/// única mensagem. O piso de 20 colunas ainda é mais estreito que qualquer
+/// celular em pé, então não custa nada a quem está usando de boa-fé.
+pub const FIT_COLS: std::ops::RangeInclusive<u16> = 20..=400;
+pub const FIT_ROWS: std::ops::RangeInclusive<u16> = 5..=200;
 
 #[cfg(test)]
 mod tests {

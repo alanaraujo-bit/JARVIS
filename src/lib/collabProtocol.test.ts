@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   decodeFrame,
   encodeInput,
+  inviteUrl,
   normalizeAddress,
   normalizeCode,
   OP_DATA,
@@ -117,5 +118,39 @@ describe("código da sala", () => {
     // divergirem, o código certo passa a ser recusado e não há nenhuma
     // mensagem de erro que explique o porquê.
     expect(normalizeCode("a-b-2-c-3-d-4-e")).toBe("AB2C-3D4E");
+  });
+});
+
+describe("convite para o celular", () => {
+  it("vira um endereço que o navegador abre", () => {
+    // A sala guarda `ws://`/`wss://` porque é isso que o convidado do desktop
+    // consome; o QR precisa de algo que uma câmera de celular saiba abrir.
+    expect(inviteUrl("wss://abc.trycloudflare.com", "AB2C-3D4E")).toBe(
+      "https://abc.trycloudflare.com/#c=AB2C-3D4E",
+    );
+    expect(inviteUrl("ws://192.168.0.10:7391", "AB2C-3D4E")).toBe(
+      "http://192.168.0.10:7391/#c=AB2C-3D4E",
+    );
+  });
+
+  it("leva o código no fragmento, e não numa query", () => {
+    // O navegador não envia o fragmento ao servidor: o código não entra em
+    // log de acesso, de proxy nem do túnel. Numa query, entraria nos três.
+    const url = inviteUrl("wss://x.trycloudflare.com", "AB2C-3D4E")!;
+    expect(url).toContain("#c=");
+    expect(url).not.toContain("?");
+  });
+
+  it("normaliza o código antes de colocá-lo no link", () => {
+    expect(inviteUrl("wss://x.com", "ab2c3d4e")).toBe("https://x.com/#c=AB2C-3D4E");
+  });
+
+  it("não duplica a barra de um endereço que já termina com uma", () => {
+    expect(inviteUrl("wss://x.com/", "AB2C-3D4E")).toBe("https://x.com/#c=AB2C-3D4E");
+  });
+
+  it("sem endereço não há convite", () => {
+    // Acontece de verdade: máquina sem rede e túnel desligado.
+    expect(inviteUrl(null, "AB2C-3D4E")).toBeNull();
   });
 });

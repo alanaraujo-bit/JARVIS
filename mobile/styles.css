@@ -1,0 +1,469 @@
+/**
+ * A aparência do app do celular.
+ *
+ * Três regras carregam quase tudo aqui, e todas as três existem porque um
+ * terminal num navegador móvel briga com os reflexos do navegador:
+ *
+ * 1. `--altura` no lugar de `100vh`. É a altura *visível*, calculada em
+ *    `useTela.ts`. Com `vh`, a barra de teclas ficaria desenhada atrás do
+ *    teclado do sistema.
+ * 2. `overscroll-behavior: none` e `<body>` fixo. Sem isso, arrastar para
+ *    baixo num terminal recarrega a página — perder a sessão por um gesto de
+ *    rolagem seria a pior falha possível deste app.
+ * 3. `touch-action` restrito. O toque duplo para dar zoom e o atraso de 300 ms
+ *    que vem junto não têm serventia nenhuma numa tela cheia de botões
+ *    pequenos, e o atraso é sentido em cada tecla.
+ */
+
+@import "@xterm/xterm/css/xterm.css";
+
+:root {
+  --fundo: #0b0f14;
+  --fundo-2: #121821;
+  --linha: #1f2937;
+  --texto: #e6edf3;
+  --fraco: #93a4b8;
+  --acento: #5eead4;
+  --perigo: #f87171;
+
+  --seguro-cima: env(safe-area-inset-top, 0px);
+  --seguro-baixo: env(safe-area-inset-bottom, 0px);
+  --seguro-esq: env(safe-area-inset-left, 0px);
+  --seguro-dir: env(safe-area-inset-right, 0px);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--fundo);
+  color: var(--texto);
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  touch-action: manipulation;
+}
+
+#root {
+  height: 100%;
+}
+
+.tela {
+  display: flex;
+  flex-direction: column;
+  height: var(--altura, 100dvh);
+  padding-left: var(--seguro-esq);
+  padding-right: var(--seguro-dir);
+}
+
+/* ------------------------------- entrada -------------------------------- */
+
+.entrada {
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem calc(1.5rem + var(--seguro-esq)) calc(1.5rem + var(--seguro-baixo));
+}
+
+.entrada-caixa {
+  width: 100%;
+  max-width: 22rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.entrada h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  letter-spacing: 0.14em;
+  font-weight: 600;
+  color: var(--acento);
+}
+
+.entrada .sub {
+  margin: -0.6rem 0 0.6rem;
+  color: var(--fraco);
+  font-size: 0.9rem;
+}
+
+.entrada label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fraco);
+}
+
+.entrada input {
+  /* 16px é o limiar abaixo do qual o iOS dá zoom no campo em foco e deixa o
+     layout torto pelo resto da sessão. Não é escolha estética. */
+  font-size: 16px;
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--linha);
+  background: var(--fundo-2);
+  color: var(--texto);
+  font-family: inherit;
+}
+
+.entrada input:focus {
+  outline: none;
+  border-color: var(--acento);
+}
+
+.principal {
+  margin-top: 0.4rem;
+  padding: 0.95rem;
+  border: none;
+  border-radius: 0.7rem;
+  background: var(--acento);
+  color: #06201c;
+  font-size: 1rem;
+  font-weight: 650;
+  font-family: inherit;
+}
+
+.principal:disabled {
+  opacity: 0.4;
+}
+
+.erro {
+  margin: 0;
+  color: var(--perigo);
+  font-size: 0.88rem;
+}
+
+.aviso {
+  margin: 0;
+  color: var(--fraco);
+  font-size: 0.88rem;
+}
+
+/* --------------------------------- sala --------------------------------- */
+
+.topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: calc(0.5rem + var(--seguro-cima)) 0.85rem 0.5rem;
+  border-bottom: 1px solid var(--linha);
+  background: var(--fundo-2);
+}
+
+.topo-titulo {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.2rem 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.topo-titulo .nome {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topo-titulo .pasta {
+  font-size: 0.75rem;
+  color: var(--fraco);
+  white-space: nowrap;
+}
+
+.estado {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--fraco);
+  font-variant-numeric: tabular-nums;
+}
+
+.estado .ponto {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--perigo);
+}
+
+.estado.on .ponto {
+  background: var(--acento);
+}
+
+.abas {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--linha);
+  background: var(--fundo-2);
+  scrollbar-width: none;
+}
+
+.abas::-webkit-scrollbar {
+  display: none;
+}
+
+.aba {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--linha);
+  background: transparent;
+  color: var(--fraco);
+  font: inherit;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.aba.ativa {
+  border-color: var(--acento);
+  color: var(--acento);
+}
+
+.aba .so-leitura {
+  font-size: 0.65rem;
+  opacity: 0.7;
+}
+
+/* ------------------------------- terminal -------------------------------- */
+
+.terminal-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.35rem 0.4rem;
+  background: var(--fundo);
+  /* O xterm já rola sozinho no eixo vertical. Deixar o toque virar rolagem da
+     página aqui faria a tela inteira balançar a cada arrasto no terminal. */
+  touch-action: pan-y;
+  overflow: hidden;
+}
+
+.terminal-area .xterm {
+  height: 100%;
+}
+
+/* ----------------------------- barra de teclas --------------------------- */
+
+.barra-teclas {
+  flex: none;
+  border-top: 1px solid var(--linha);
+  background: var(--fundo-2);
+  padding-bottom: var(--seguro-baixo);
+}
+
+.teclas-linha {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.teclas-linha::-webkit-scrollbar {
+  display: none;
+}
+
+.teclas-linha.extras {
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--linha);
+  padding-bottom: 0.4rem;
+}
+
+.tecla {
+  flex: none;
+  /* 40px é o menor alvo em que um polegar acerta sem olhar. Abaixo disso a
+     barra vira uma fonte de erro de digitação em vez de um atalho. */
+  min-width: 2.5rem;
+  height: 2.5rem;
+  padding: 0 0.6rem;
+  border-radius: 0.55rem;
+  border: 1px solid var(--linha);
+  background: #1a222d;
+  color: var(--texto);
+  font: inherit;
+  font-size: 0.85rem;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+.tecla:active {
+  background: #2a3644;
+}
+
+.tecla:disabled {
+  opacity: 0.35;
+}
+
+.tecla.armada {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #06201c;
+  font-weight: 700;
+}
+
+.tecla.mod,
+.tecla.mais {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.tecla.mais {
+  left: auto;
+  right: 0;
+}
+
+.so-olhando {
+  flex: none;
+  padding: 0.7rem 0.9rem calc(0.7rem + var(--seguro-baixo));
+  border-top: 1px solid var(--linha);
+  background: var(--fundo-2);
+  color: var(--fraco);
+  font-size: 0.8rem;
+}
+
+/* -------------------------------- painel --------------------------------- */
+
+.painel {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border-bottom: 1px solid var(--linha);
+  background: var(--fundo-2);
+  max-height: 60%;
+  overflow-y: auto;
+}
+
+.painel .linha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.painel .alternador {
+  align-items: flex-start;
+}
+
+.painel .alternador em {
+  display: block;
+  margin-top: 0.25rem;
+  font-style: normal;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--fraco);
+}
+
+.painel input[type="checkbox"] {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  accent-color: var(--acento);
+}
+
+.passos {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.passos button,
+.painel .acoes button {
+  min-width: 2.4rem;
+  height: 2.2rem;
+  padding: 0 0.7rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--linha);
+  background: #1a222d;
+  color: var(--texto);
+  font: inherit;
+}
+
+.passos .valor {
+  min-width: 1.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--fraco);
+}
+
+.painel .gente {
+  align-items: flex-start;
+}
+
+.pessoas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.pessoa {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--fraco);
+}
+
+.pessoa.fora {
+  opacity: 0.45;
+}
+
+.pessoa i {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+}
+
+.painel .acoes {
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.painel .acoes .sair {
+  color: var(--perigo);
+  border-color: #3b1d1d;
+}
+
+/* --------------------------------- vazio --------------------------------- */
+
+.vazia {
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.vazia .sub {
+  color: var(--fraco);
+  font-size: 0.88rem;
+}

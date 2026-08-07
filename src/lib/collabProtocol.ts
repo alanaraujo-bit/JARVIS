@@ -8,7 +8,8 @@
  * alguém falou) continua em JSON, onde a clareza vale mais que os bytes.
  */
 
-export const PROTOCOL_VERSION = 1;
+/** v2: `fit`/`unfit`. Ver `PROTOCOL_VERSION` em `collab/protocol.rs`. */
+export const PROTOCOL_VERSION = 2;
 
 export const OP_DATA = 0x01;
 export const OP_INPUT = 0x02;
@@ -83,7 +84,12 @@ export type ClientMsg =
   | { t: "chat"; text: string }
   | { t: "ai"; text: string }
   | { t: "snapshot"; sessionId: string }
-  | { t: "ping"; t0: number };
+  | { t: "ping"; t0: number }
+  // O convidado entra na negociação de tamanho como mais um painel. Enquanto
+  // vale, o terminal encolhe também na tela do anfitrião — ver `ClientMsg`
+  // em `collab/protocol.rs`.
+  | { t: "fit"; sessionId: string; cols: number; rows: number }
+  | { t: "unfit"; sessionId: string };
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -147,6 +153,26 @@ export function normalizeAddress(bruto: string): string | null {
   const pareceIp = /^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/.test(s);
   const pareceLocal = s.startsWith("localhost");
   return `${pareceIp || pareceLocal ? "ws" : "wss"}://${s}`;
+}
+
+/**
+ * O endereço que o celular abre no navegador, com o código já dentro.
+ *
+ * Duas conversões acontecem aqui, e as duas têm motivo.
+ *
+ * A primeira é de esquema: a sala guarda o endereço como `ws://`/`wss://`,
+ * que é o que o convidado do desktop consome, mas quem vai *abrir uma página*
+ * precisa de `http://`/`https://`.
+ *
+ * A segunda é o código viajar no fragmento (`#c=…`) em vez de numa query. O
+ * navegador não envia o fragmento ao servidor: ele não entra em log de acesso,
+ * de proxy nem do túnel da Cloudflare. Uma query string entraria nos três — e
+ * este é o segredo que separa um desconhecido de um terminal.
+ */
+export function inviteUrl(address: string | null, code: string): string | null {
+  if (!address) return null;
+  const web = address.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
+  return `${web.replace(/\/+$/, "")}/#c=${normalizeCode(code)}`;
 }
 
 /** Mesma normalização do backend: aceita minúsculo, sem hífen, com espaços. */

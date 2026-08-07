@@ -170,6 +170,53 @@
   user-select: all;
 }
 
+/* O QR e a explicação lado a lado. O código fica grande de propósito: ele é
+   lido por uma câmera de celular a meio metro da tela, muitas vezes com o
+   aparelho na mão e sem apoio. */
+.collab-qr {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-6);
+  margin-bottom: var(--space-5);
+}
+
+.collab-qr-img,
+.collab-qr-vazio {
+  flex: none;
+  width: 9.5rem;
+  height: 9.5rem;
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+
+.collab-qr-vazio {
+  background: var(--surface-raised);
+}
+
+.collab-qr-texto {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.collab-qr-texto strong {
+  font-size: var(--text-md);
+}
+
+.collab-qr-texto p {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+}
+
+.collab-qr-alcance {
+  color: var(--text-faint) !important;
+  font-size: var(--text-xs) !important;
+}
+
 .collab-address {
   display: flex;
   align-items: center;

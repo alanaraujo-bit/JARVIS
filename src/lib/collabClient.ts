@@ -276,6 +276,28 @@ export class CollabClient {
     if (this.estado.phase !== "idle") this.set({ phase: "closed", latency: null });
   }
 
+  /**
+   * "Voltei — a conexão ainda está de pé?"
+   *
+   * Existe por causa do celular. Um aparelho que fica minutos com a tela
+   * apagada tem o socket derrubado por NAT ou pelo próprio sistema, e nem
+   * sempre o evento `close` chega: a página é congelada antes. Ao acordar, o
+   * `readyState` diz `CLOSED` mas nenhuma reconexão foi agendada, e a tela
+   * ficaria parada mostrando o terminal de dez minutos atrás.
+   *
+   * Chamar isto quando o app volta ao primeiro plano custa uma leitura de
+   * campo no caso normal e conserta o caso ruim na hora, sem esperar o
+   * próximo passo do backoff.
+   */
+  ensureAlive() {
+    if (this.encerrado || !this.cred) return;
+    const estado = this.ws?.readyState;
+    if (estado === WebSocket.OPEN || estado === WebSocket.CONNECTING) return;
+    window.clearTimeout(this.reconnectTimer);
+    this.tentativa = 0;
+    this.abrir();
+  }
+
   /** Esquece tudo e volta à tela de entrar numa sala. */
   reset() {
     this.disconnect();
@@ -433,6 +455,23 @@ export class CollabClient {
       this.snapshotPend.set(sessionId, { resolve, timer });
       this.enviar({ t: "snapshot", sessionId });
     });
+  }
+
+  /**
+   * "Este terminal cabe em tantas colunas na minha tela."
+   *
+   * Vale a pena ser explícito sobre o efeito: enquanto o ajuste estiver
+   * valendo, o terminal encolhe **na tela do anfitrião também** — o PTY é um
+   * só e fica do tamanho do menor painel. Quem chama isto precisa ter deixado
+   * isso claro na interface antes.
+   */
+  fit(sessionId: string, cols: number, rows: number) {
+    this.enviar({ t: "fit", sessionId, cols, rows });
+  }
+
+  /** Devolve o tamanho ao anfitrião. Sair da sala tem o mesmo efeito. */
+  unfit(sessionId: string) {
+    this.enviar({ t: "unfit", sessionId });
   }
 
   sendChat(text: string) {

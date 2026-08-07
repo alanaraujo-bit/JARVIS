@@ -189,6 +189,75 @@ pub fn forget(id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Recusa qualquer id de sessão que não seja um nome de arquivo simples —
+/// mesma cautela do `valida_id`, porque isto também vira componente de
+/// caminho (`<sessão>.jsonl`).
+fn valida_session_id(id: &str) -> Result<&str> {
+    let ok = !id.is_empty()
+        && id.len() <= 128
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if ok {
+        Ok(id)
+    } else {
+        Err(JarvisError::BadPayload(format!(
+            "id de sessão inválido: {id:?}"
+        )))
+    }
+}
+
+/// Copia a conversa de uma conta para outra — só o `.jsonl` daquela sessão,
+/// não a pasta do projeto inteira, para não arrastar junto conversas de
+/// outros dias que por acaso vivem na mesma pasta.
+///
+/// É o que permite trocar a conta de um painel já aberto sem perder a
+/// conversa: o terminal velho morre (a variável de ambiente da conta só é
+/// lida no nascimento do processo, não há como mudá-la nele em voo), mas o
+/// `claude --resume` do terminal novo encontra a conversa esperando na conta
+/// de destino.
+///
+/// Copia, não move: a conta de origem continua podendo retomar a mesma
+/// conversa depois. `from_config_dir: None` é a instalação padrão da CLI
+/// (`~/.claude`), do mesmo jeito que em todo o resto deste módulo.
+///
+/// Silenciosamente não faz nada quando a conversa não existe na origem — uma
+/// sessão sem uma pergunta sequer pode nunca ter sido gravada em disco; nesse
+/// caso o `--resume` do lado de lá vai falhar sozinho, e a pessoa vê o motivo
+/// na tela do terminal, o que é melhor que um erro genérico aqui.
+pub fn migrate_session(
+    from_config_dir: Option<&str>,
+    to_config_dir: &str,
+    cwd: &str,
+    session_id: &str,
+) -> Result<()> {
+    let session_id = valida_session_id(session_id)?;
+    let from_root = match from_config_dir {
+        Some(d) => PathBuf::from(d),
+        None => default_claude_dir().ok_or_else(|| {
+            JarvisError::ConfigIo("conta padrão do Claude Code não encontrada".into())
+        })?,
+    };
+
+    let slug = crate::agents::slug_claude(cwd);
+    let origem = from_root
+        .join("projects")
+        .join(&slug)
+        .join(format!("{session_id}.jsonl"));
+    if !origem.is_file() {
+        return Ok(());
+    }
+
+    let pasta_destino = PathBuf::from(to_config_dir).join("projects").join(&slug);
+    fs::create_dir_all(&pasta_destino).map_err(|e| JarvisError::ConfigIo(e.to_string()))?;
+    let destino = pasta_destino.join(format!("{session_id}.jsonl"));
+    if origem == destino {
+        return Ok(());
+    }
+    fs::copy(&origem, &destino).map_err(|e| JarvisError::ConfigIo(e.to_string()))?;
+    Ok(())
+}
+
 /// Lê o estado de uma conta sem tocar em nada.
 pub fn status(id: &str) -> Result<AccountStatus> {
     let dir = account_dir(id)?;
@@ -240,6 +309,55 @@ mod tests {
     fn ids_gerados_pelo_front_passam() {
         assert!(valida_id("acc-1a2b3c").is_ok());
         assert!(valida_id("pessoal_2").is_ok());
+    }
+
+    #[test]
+    fn ids_de_sessao_com_travessia_de_caminho_sao_recusados() {
+        assert!(valida_session_id("../outra").is_err());
+        assert!(valida_session_id("a/b").is_err());
+        assert!(valida_session_id("").is_err());
+        assert!(valida_session_id("uuid-abc-123").is_ok());
+    }
+
+    #[test]
+    fn migra_a_conversa_para_a_pasta_da_conta_nova() {
+        let base = std::env::temp_dir().join(format!("jarvis-migra-teste-{}", std::process::id()));
+        let de = base.join("de");
+        let para = base.join("para");
+        let cwd = r"C:\Projetos\teste-migracao";
+        let slug = crate::agents::slug_claude(cwd);
+
+        let pasta_projeto = de.join("projects").join(&slug);
+        fs::create_dir_all(&pasta_projeto).unwrap();
+        fs::write(pasta_projeto.join("sessao-1.jsonl"), "{}\n").unwrap();
+
+        migrate_session(Some(&de.to_string_lossy()), &para.to_string_lossy(), cwd, "sessao-1")
+            .unwrap();
+
+        let copiado = para.join("projects").join(&slug).join("sessao-1.jsonl");
+        assert!(copiado.is_file(), "a conversa devia ter sido copiada para a conta nova");
+        // A origem continua existindo: é cópia, não movimento.
+        assert!(pasta_projeto.join("sessao-1.jsonl").is_file());
+
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn migrar_sessao_sem_conversa_gravada_nao_e_erro() {
+        let base = std::env::temp_dir().join(format!("jarvis-migra-vazia-{}", std::process::id()));
+        let de = base.join("de");
+        let para = base.join("para");
+        fs::create_dir_all(&de).unwrap();
+
+        let r = migrate_session(
+            Some(&de.to_string_lossy()),
+            &para.to_string_lossy(),
+            r"C:\Projetos\nada",
+            "nunca-existiu",
+        );
+        assert!(r.is_ok());
+
+        fs::remove_dir_all(&base).ok();
     }
 
     #[test]

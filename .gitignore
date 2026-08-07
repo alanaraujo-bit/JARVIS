@@ -16,3 +16,7 @@ shots-menu/
 # Gerado por `npm run release:manifest` a cada versão; a cópia que vale é a
 # anexada à release do GitHub.
 latest.json
+# Saida do `vite build -c vite.mobile.config.ts` (o PWA do celular), embutida
+# no executavel pelo `include_bytes!`. Gerada a cada build; a fonte esta em
+# `src/mobile/`.
+src-tauri/webapp/

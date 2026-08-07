@@ -101,6 +101,7 @@ pub fn run() {
             commands::claude_account_logout,
             commands::claude_account_forget,
             commands::claude_default_login_exists,
+            commands::claude_account_migrate_session,
             commands::collab_start,
             commands::collab_stop,
             commands::collab_state,
@@ -116,6 +117,7 @@ pub fn run() {
             commands::collab_tunnel_download,
             commands::collab_tunnel_start,
             commands::collab_tunnel_stop,
+            commands::collab_invite_qr,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::Destroyed = event {

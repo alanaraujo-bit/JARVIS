@@ -97,6 +97,14 @@ export const collabTunnelStart = () => invoke<HostState>("collab_tunnel_start");
 
 export const collabTunnelStop = () => invoke<HostState>("collab_tunnel_stop");
 
+export interface QrCode {
+  size: number;
+  /** `true` é módulo escuro, em ordem de leitura. */
+  modules: boolean[];
+}
+
+export const collabInviteQr = (text: string) => invoke<QrCode>("collab_invite_qr", { text });
+
 export const onCollabState = (cb: (s: HostState) => void): Promise<UnlistenFn> =>
   listen<HostState>(EV_COLLAB, (e) => cb(e.payload));
 

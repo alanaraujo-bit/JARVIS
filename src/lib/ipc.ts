@@ -567,3 +567,16 @@ export const claudeAccountForget = (id: string) =>
   invoke<void>("claude_account_forget", { id });
 
 export const claudeDefaultLoginExists = () => invoke<boolean>("claude_default_login_exists");
+
+/**
+ * Copia a conversa (o `.jsonl` da sessão) de uma pasta de conta para outra —
+ * o passo que permite trocar de conta num painel já aberto sem perder a
+ * conversa: o processo velho morre, mas o `claude --resume` do processo novo
+ * encontra a conversa esperando na conta nova.
+ */
+export const claudeAccountMigrateSession = (opts: {
+  fromConfigDir: string | null;
+  toConfigDir: string;
+  cwd: string;
+  sessionId: string;
+}) => invoke<void>("claude_account_migrate_session", { opts });

@@ -376,6 +376,15 @@ body {
   background: var(--danger-quiet);
 }
 
+/* Segundo passo da confirmação dupla de fechar um conjunto de terminais
+   (aba com painéis divididos): fica aceso mesmo sem hover, para o aviso não
+   sumir assim que o mouse se afasta antes do segundo clique. */
+.tab .x.confirm {
+  opacity: 1;
+  color: var(--danger);
+  background: var(--danger-quiet);
+}
+
 /* Sem `margin-left: auto` aqui: quem empurra o bloco da direita é o
    `.topbar-right`. Dois `auto` na mesma linha dividem a sobra entre si e
    abrem um vão no meio da barra que ninguém pediu. */
@@ -533,25 +542,34 @@ body {
   padding: var(--space-1) var(--space-3);
 }
 
-/* Pílula da pasta do terminal. Fica no canto, discreta, sempre visível — é
-   justamente o "em qual projeto este painel está abrindo" que se quer ler
-   de relance quando há vários terminais abertos. */
+/* Pílula da pasta do terminal. Centralizada no topo, discreta, sempre
+   visível — é justamente o "em qual projeto este painel está abrindo" que se
+   quer ler de relance quando há vários terminais abertos. Translúcida de
+   propósito: ela flutua sobre o próprio conteúdo do terminal, e uma pílula
+   opaca ali cobriria texto que às vezes é a primeira linha da tela. */
 .pane-cwd {
   position: absolute;
-  left: 4px;
-  bottom: 4px;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 3;
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   max-width: 50%;
   padding: var(--space-1) var(--space-3);
-  background: var(--surface-1);
-  border: var(--border-width) solid var(--border);
+  background: color-mix(in srgb, var(--surface-1) 55%, transparent);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: var(--border-width) solid color-mix(in srgb, var(--border) 60%, transparent);
   border-radius: var(--radius-full);
   color: var(--text-muted);
   font-size: var(--text-xs);
   cursor: default;
+  transition:
+    opacity var(--dur-fast) var(--ease-fluid),
+    background-color var(--dur-fast) var(--ease-fluid),
+    color var(--dur-fast) var(--ease-fluid);
 }
 
 .pane-cwd-label {
@@ -563,6 +581,85 @@ body {
 
 .pane-cwd:hover {
   color: var(--text);
+  background: color-mix(in srgb, var(--surface-1) 85%, transparent);
+}
+
+/* Seletor de conta do Claude Code do painel. Fica no canto oposto ao
+   `pane-close`, na cor da conta em uso — dá para ver de relance qual conta
+   cada painel está usando sem abrir nada. */
+.pane-account {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  z-index: 3;
+}
+
+.pane-account-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: var(--surface-1);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-fluid);
+}
+
+.split-leaf:hover .pane-account-btn,
+.pane-account-btn:focus-visible,
+.pane-account-btn.open {
+  opacity: 1;
+}
+
+.pane-account-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.pane-account-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 4;
+  min-width: 140px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  background: var(--surface-1);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-2);
+}
+
+.pane-account-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text);
+  font-size: var(--text-xs);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pane-account-item:hover {
+  background: var(--surface-2);
+}
+
+.pane-account-item.active {
+  color: var(--text-muted);
+  cursor: default;
 }
 
 .pane-close {

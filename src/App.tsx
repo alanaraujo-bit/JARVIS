@@ -42,6 +42,7 @@ import { contaDoConfigDir } from "./lib/agentResume";
 import {
   agentResumeProbe,
   appHomeDir,
+  claudeAccountMigrateSession,
   claudeUsageLive,
   configLoad,
   configSave,
@@ -983,7 +984,17 @@ export default function App() {
   );
 
   const restartPane = useCallback(
-    async (tabId: string, paneId: string) => {
+    async (
+      tabId: string,
+      paneId: string,
+      /**
+       * Sobrescritas usadas pela troca de conta (ver `switchAccountForPane`):
+       * uma conta forçada, ignorando a precedência normal, e um comando de
+       * abertura diferente do auto-início do workspace — o `claude --resume`
+       * que retoma a conversa na conta nova.
+       */
+      opts?: { contaForcada?: string | null; comando?: string },
+    ) => {
       const tab = tabsRef.current.find((t) => t.id === tabId);
       if (!tab) return;
       const target = findLeaf(tab.root, paneId);
@@ -1001,7 +1012,8 @@ export default function App() {
           profile ?? { id: "", name: dead.title, program: dead.program, args: dead.args, icon: "", recommended: false },
           dead.cwd,
           dead.title,
-          ws?.autoCommand ?? undefined,
+          opts?.comando ?? ws?.autoCommand ?? undefined,
+          opts?.contaForcada,
         );
         closeSession(dead.id);
 
@@ -1028,6 +1040,57 @@ export default function App() {
       }
     },
     [sessions, spawnFor, closeSession, aplicaTabs],
+  );
+
+  /**
+   * Troca a conta do Claude Code usada por um painel já aberto.
+   *
+   * Não existe forma de mudar a variável de ambiente de um processo vivo —
+   * `CLAUDE_CONFIG_DIR` só é lida no nascimento do `claude`. Então isto
+   * reinicia o shell do painel (como o botão "Reiniciar"), mas antes copia a
+   * conversa que estava rodando ali para a pasta da conta nova e pede ao
+   * terminal novo para retomá-la (`claude --resume`) — de fora, a conversa
+   * continua de onde parou; só o processo por trás é outro.
+   *
+   * Sem conversa de IA identificada (painel comum, ou sessão do agente que
+   * nunca chegou a gravar nada), o painel reinicia do mesmo jeito, só que
+   * numa conversa nova — o mesmo que "Reiniciar" já fazia.
+   */
+  const switchAccountForPane = useCallback(
+    async (tabId: string, paneId: string, accountId: string) => {
+      const tab = tabsRef.current.find((t) => t.id === tabId);
+      if (!tab) return;
+      const target = findLeaf(tab.root, paneId);
+      if (!target) return;
+      const session = sessions[target.sessionId];
+      if (!session) return;
+
+      try {
+        const dirNovo = await useAccountStore.getState().garantirDir(accountId);
+        if (!dirNovo) {
+          setError("Não foi possível preparar a pasta da conta.");
+          return;
+        }
+
+        const resume = await agentResumeProbe(session.id).catch(() => null);
+        if (resume?.kind === "claude" && resume.sessionId) {
+          await claudeAccountMigrateSession({
+            fromConfigDir: resume.configDir,
+            toConfigDir: dirNovo,
+            cwd: session.cwd,
+            sessionId: resume.sessionId,
+          }).catch((e) => setError(String(e)));
+        }
+
+        await restartPane(tabId, paneId, {
+          contaForcada: accountId,
+          comando: resume?.command,
+        });
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [sessions, restartPane],
   );
 
   /* ----------------------------- IA ----------------------------------- */
@@ -2026,10 +2089,14 @@ export default function App() {
                 activePaneId={t.activePaneId}
                 sessions={sessions}
                 paneCount={listLeaves(t.root).length}
+                contaDaSessao={sessionAccounts}
                 onFocusPane={(paneId) => focusPane(t.id, paneId)}
                 onResize={(splitId, sizes) => resizePane(t.id, splitId, sizes)}
                 onClosePane={(paneId) => closePane(t.id, paneId)}
                 onRestartPane={(paneId) => void restartPane(t.id, paneId)}
+                onSwitchAccount={(paneId, accountId) =>
+                  void switchAccountForPane(t.id, paneId, accountId)
+                }
               />
             </div>
           ))}
@@ -2140,6 +2207,41 @@ function TabBar({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const dragFrom = useRef<string | null>(null);
   const barraRef = useRef<HTMLElement | null>(null);
+  /**
+   * Confirmação dupla para fechar um *conjunto* de terminais — uma aba com
+   * mais de um painel dividido. Fechar um terminal sozinho continua no
+   * primeiro clique (é o de sempre); é derrubar vários processos de uma vez
+   * que merece o segundo clique. Expira sozinha depois de alguns segundos
+   * para não deixar um botão de "clique de novo" aceso pra sempre numa aba
+   * em que a pessoa desistiu de fechar.
+   */
+  const [confirmCloseId, setConfirmCloseId] = useState<string | null>(null);
+  const confirmTimer = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const timers = confirmTimer.current;
+    return () => {
+      for (const id of Object.values(timers)) window.clearTimeout(id);
+    };
+  }, []);
+
+  const attemptClose = (tabId: string, leafCount: number) => {
+    if (leafCount <= 1) {
+      onClose(tabId);
+      return;
+    }
+    if (confirmCloseId === tabId) {
+      window.clearTimeout(confirmTimer.current[tabId]);
+      delete confirmTimer.current[tabId];
+      setConfirmCloseId(null);
+      onClose(tabId);
+      return;
+    }
+    setConfirmCloseId(tabId);
+    confirmTimer.current[tabId] = window.setTimeout(() => {
+      setConfirmCloseId((cur) => (cur === tabId ? null : cur));
+    }, 3000);
+  };
 
   const commitRename = (id: string, value: string) => {
     const title = value.trim();
@@ -2261,15 +2363,21 @@ function TabBar({
             <Icon name="minimize" size={12} />
           </button>
           <button
-            className="x"
-            title="Fechar aba — encerra o processo"
+            className={`x ${confirmCloseId === t.id ? "confirm" : ""}`}
+            title={
+              confirmCloseId === t.id
+                ? `Clique de novo para fechar os ${listLeaves(t.root).length} terminais desta aba`
+                : listLeaves(t.root).length > 1
+                  ? "Fechar aba — encerra os processos dela"
+                  : "Fechar aba — encerra o processo"
+            }
             aria-label={`Fechar ${t.title}`}
             onClick={(e) => {
               e.stopPropagation();
-              onClose(t.id);
+              attemptClose(t.id, listLeaves(t.root).length);
             }}
           >
-            <Icon name="close" size={12} />
+            <Icon name={confirmCloseId === t.id ? "warning" : "close"} size={12} />
           </button>
         </div>
       ))}

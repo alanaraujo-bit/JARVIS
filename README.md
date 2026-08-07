@@ -52,6 +52,12 @@ pasta de configuração isolada, e um terminal pode nascer em qualquer uma delas
 o painel de uso mostra quanto cada conta consumiu nas últimas 5h e 24h. Veja
 [Contas do Claude Code](#contas-do-claude-code).
 
+**O terminal no celular.** A sala de trabalho compartilhado serve, na mesma
+porta, um aplicativo web que o celular abre e instala. Você aponta a câmera
+para o QR do convite e cai direto no terminal do computador — com o Claude
+Code rodando nele, acesso à pasta do projeto e tudo o mais. Veja
+[O terminal no celular](#o-terminal-no-celular).
+
 **Paleta de comandos** (`Ctrl+Shift+P`) com busca por subsequência, e
 **dashboard de estatísticas** (`Ctrl+Shift+S`) alimentado pelos contadores que
 o motor de PTY já mantém.
@@ -121,12 +127,62 @@ por isso que o `settings.json` que o painel edita é o da conta padrão.
 > Manter contas separadas por contexto (pessoal, trabalho, cliente) é uso
 > normal — a ferramenta serve aos dois casos, a escolha é sua.
 
+## O terminal no celular
+
+A porta que aceita um convidado também entrega a tela dele. Não há segundo
+servidor, segunda porta nem hospedagem em lugar nenhum: o mesmo endereço é a
+origem do aplicativo web e o destino do WebSocket, e é isso que permite à
+página abrir `wss://` de volta para si mesma sem CORS e sem certificado
+próprio. Os arquivos vão embutidos no executável (`collab/webapp.rs`), porque
+um caminho lido do disco é a diferença entre "funciona aqui" e "funciona na
+máquina de quem instalou".
+
+**Como usar.** `Ctrl+Shift+P` → *Trabalho compartilhado* → abrir a sala.
+Marque os terminais que quer expor — a sala nasce vazia, e compartilhar é
+sempre um segundo gesto. Aponte a câmera do celular para o QR do convite. O
+código da sala viaja no fragmento da URL (`#c=…`), que o navegador **não**
+envia ao servidor: ele não entra em log de acesso, de proxy nem do túnel.
+
+Pela rede local funciona no mesmo Wi-Fi. Para usar de fora, ligue o endereço
+público — o `cloudflared` abre um túnel de dentro para fora e devolve um
+`https://` que desemboca no listener local, sem abrir porta no roteador. Esse
+endereço é sorteado a cada sessão, então o fluxo é escanear o QR quando o
+computador liga; instalar pela tela de início vale enquanto o endereço durar.
+
+**A largura do terminal.** Um celular em pé não tem 80 colunas legíveis. O
+app entra na mesma negociação de tamanho que os painéis do computador já
+fazem entre si — o PTY fica do tamanho do menor painel aberto — e o celular é
+só mais um painel, estreito. A consequência é real e está dita na tela: com o
+ajuste ligado, o terminal encolhe **também no computador**. Desligue no painel
+e você vê as colunas do computador com a letra menor. O ajuste é desfeito
+quando a conexão morre, seja por qual motivo for.
+
+**O que o celular alcança.** Exatamente os terminais marcados, e nada além.
+Não existe mensagem no protocolo para abrir terminal, executar programa, ler
+arquivo, listar pasta ou mudar a própria permissão — a superfície inteira são
+os quatro métodos de `PtyAccess` em `collab/server.rs`. Ainda assim, um
+terminal em modo `rw` com o Claude Code dentro é acesso à máquina: mantenha a
+aprovação manual ligada quando o endereço for público.
+
+**Service worker e HTTPS.** O app só fica instalável pelo túnel: service
+worker exige origem segura, e a rede local é `http://`. Pela LAN ele funciona
+como página normal — rápida, só não instalável.
+
+Para inspecionar o app sem abrir o JARVIS, há uma sala de bancada com um PTY
+que devolve o eco:
+
+```powershell
+cargo test --test qa_collab_e2e sala_de_bancada -- --ignored --nocapture
+# abre o endereço impresso (também gravado em src-tauri/target/bancada.txt)
+```
+
 ## Rodando
 
 ```powershell
 npm install
 npm run app:dev     # app nativo, com recarga automática
 npm run app:build   # instalador NSIS em src-tauri/target/release/bundle
+npm run dev:mobile  # só o app do celular, em http://localhost:5174
 ```
 
 Só a interface, no navegador, sem compilar o Rust:

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      `viewport-fit=cover` deixa o app usar a área sob o notch e a barra de
+      gestos; o CSS devolve o respiro com `env(safe-area-inset-*)`. Sem isso o
+      terminal nasceria com duas faixas pretas que nenhuma tela cheia tira.
+
+      `interactive-widget=resizes-content` é o que faz o Android encolher o
+      layout quando o teclado abre, em vez de empurrar a página para cima. É a
+      diferença entre a barra de teclas ficar grudada acima do teclado e ela
+      sumir atrás dele. O iOS ignora esta dica — lá quem resolve é o
+      `visualViewport` no JS.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0b0f14" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="JARVIS" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="icon" href="/icon-192.png" />
+    <title>JARVIS</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

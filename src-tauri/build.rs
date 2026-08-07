@@ -1,4 +1,50 @@
+/// Garante que `webapp/` exista antes do `include_bytes!` que embute o PWA
+/// do celular no executável.
+///
+/// Quem preenche essa pasta de verdade é o `vite build -c
+/// vite.mobile.config.ts`, que roda no `npm run build`. Mas um `cargo check`,
+/// um `cargo test` ou um clone recém-feito acontecem sem passar por lá, e
+/// `include_bytes!` de arquivo inexistente é erro de compilação — o Rust
+/// inteiro deixaria de compilar por causa do front. Os arquivos de reserva
+/// existem para esse buraco: eles não fingem ser o app, dizem em voz alta que
+/// o build do front não rodou.
+fn webapp_de_reserva() {
+    use std::fs;
+    use std::path::Path;
+
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("webapp");
+    println!("cargo:rerun-if-changed={}", dir.display());
+    if fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+
+    let aviso = "JARVIS: o app do celular nao foi compilado. \
+Rode `npm run build` (ou `npm run build:mobile`) e compile de novo.";
+    let reservas: [(&str, String); 5] = [
+        (
+            "index.html",
+            format!("<!doctype html><meta charset=utf-8><title>JARVIS</title><p>{aviso}"),
+        ),
+        ("app.js", format!("console.error({aviso:?});")),
+        ("app.css", format!("/* {aviso} */")),
+        ("sw.js", format!("/* {aviso} */")),
+        (
+            "manifest.webmanifest",
+            r#"{"name":"JARVIS","start_url":"/","display":"standalone"}"#.to_string(),
+        ),
+    ];
+
+    for (nome, conteudo) in reservas {
+        let alvo = dir.join(nome);
+        if !alvo.exists() {
+            let _ = fs::write(alvo, conteudo);
+        }
+    }
+}
+
 fn main() {
+    webapp_de_reserva();
+
     // Faz o `comctl32.dll` ser carregado só na primeira chamada, em vez de na
     // abertura do processo.
     //

@@ -50,6 +50,11 @@ const PRAZO: Duration = Duration::from_secs(5);
 struct PtyEspiao {
     escritas: Mutex<Vec<(String, Vec<u8>)>>,
     telas: Mutex<HashMap<String, Snapshot>>,
+    /// Tamanhos pedidos por painel, como o motor de verdade guarda. O valor
+    /// `None` marca um painel que foi removido — é o que distingue "nunca
+    /// ajustou" de "ajustou e soltou", e a segunda é a que precisa acontecer
+    /// quando um celular some da rede.
+    ajustes: Mutex<Vec<(String, String, Option<(u16, u16)>)>>,
 }
 
 impl PtyEspiao {
@@ -70,6 +75,31 @@ impl PtyEspiao {
             .filter(|(s, _)| s == id)
             .flat_map(|(_, b)| b.clone())
             .collect()
+    }
+
+    /// O que aconteceu com o tamanho de um terminal, na ordem. `Some` é um
+    /// painel entrando na conta; `None` é ele saindo.
+    fn ajustes_de(&self, id: &str) -> Vec<Option<(u16, u16)>> {
+        self.ajustes
+            .lock()
+            .iter()
+            .filter(|(s, _, _)| s == id)
+            .map(|(_, _, v)| *v)
+            .collect()
+    }
+
+    async fn aguarda_ajustes(&self, id: &str, esperado: Vec<Option<(u16, u16)>>) {
+        let limite = tokio::time::Instant::now() + PRAZO;
+        while tokio::time::Instant::now() < limite {
+            if self.ajustes_de(id) == esperado {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!(
+            "o terminal {id} recebeu os ajustes {:?}, esperava {esperado:?}",
+            self.ajustes_de(id)
+        );
     }
 
     /// Espera até o servidor ter escrito `esperado` no PTY, ou desiste. As
@@ -100,6 +130,20 @@ impl PtyAccess for PtyEspiao {
 
     fn snapshot(&self, session_id: &str) -> Option<Snapshot> {
         self.telas.lock().get(session_id).cloned()
+    }
+
+    fn fit(&self, session_id: &str, view_id: &str, cols: u16, rows: u16) {
+        self.ajustes.lock().push((
+            session_id.to_string(),
+            view_id.to_string(),
+            Some((cols, rows)),
+        ));
+    }
+
+    fn unfit(&self, session_id: &str, view_id: &str) {
+        self.ajustes
+            .lock()
+            .push((session_id.to_string(), view_id.to_string(), None));
     }
 }
 
@@ -766,16 +810,16 @@ async fn fechar_a_sala_avisa_antes_de_derrubar() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn abrir_o_endereco_no_navegador_explica_o_que_fazer() {
+/* --------------------------- o app do celular ---------------------------- */
+
+/// Faz um pedido HTTP na mesma porta da sala e devolve a resposta crua.
+async fn http(porta: u16, pedido: &str) -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let sala = Sala::abrir(false).await;
-
-    let mut tcp = TcpStream::connect(("127.0.0.1", sala.porta))
+    let mut tcp = TcpStream::connect(("127.0.0.1", porta))
         .await
         .expect("conectar");
-    tcp.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nAccept: text/html\r\n\r\n")
+    tcp.write_all(pedido.as_bytes())
         .await
         .expect("enviar requisição");
 
@@ -784,17 +828,121 @@ async fn abrir_o_endereco_no_navegador_explica_o_que_fazer() {
         .await
         .expect("o navegador ficou sem resposta")
         .expect("ler resposta");
+    String::from_utf8_lossy(&resposta).into_owned()
+}
 
-    let texto = String::from_utf8_lossy(&resposta);
-    assert!(texto.starts_with("HTTP/1.1 200"), "resposta: {texto}");
+fn cabecalho<'a>(resposta: &'a str, nome: &str) -> Option<&'a str> {
+    resposta
+        .split("\r\n\r\n")
+        .next()?
+        .split("\r\n")
+        .filter_map(|l| l.split_once(':'))
+        .find(|(k, _)| k.eq_ignore_ascii_case(nome))
+        .map(|(_, v)| v.trim())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn abrir_o_endereco_no_navegador_entrega_o_app_do_celular() {
+    let sala = Sala::abrir(false).await;
+
+    let r = http(
+        sala.porta,
+        "GET / HTTP/1.1\r\nHost: localhost\r\nAccept: text/html\r\n\r\n",
+    )
+    .await;
+
+    assert!(r.starts_with("HTTP/1.1 200"), "resposta: {r}");
     assert!(
-        texto.contains("text/html"),
+        cabecalho(&r, "content-type").unwrap().contains("text/html"),
         "sem o tipo de conteúdo o navegador mostraria o HTML como texto cru"
     );
+    // A página tem que poder abrir `wss://` de volta para a própria origem —
+    // é o único motivo de ela existir. Uma política que esqueça disso
+    // entregaria um app bonito que nunca conecta.
     assert!(
-        texto.contains("Entrar numa sala"),
-        "a página deveria dizer como entrar de fato: {texto}"
+        cabecalho(&r, "content-security-policy")
+            .unwrap()
+            .contains("connect-src 'self' ws: wss:"),
+        "a política de segurança bloquearia o WebSocket: {r}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_segunda_visita_nao_baixa_o_app_de_novo() {
+    let sala = Sala::abrir(false).await;
+
+    let primeira = http(sala.porta, "GET /app.js HTTP/1.1\r\nHost: x\r\n\r\n").await;
+    let etag = cabecalho(&primeira, "etag").expect("sem ETag não há revalidação");
+
+    let segunda = http(
+        sala.porta,
+        &format!("GET /app.js HTTP/1.1\r\nHost: x\r\nIf-None-Match: {etag}\r\n\r\n"),
+    )
+    .await;
+
+    assert!(
+        segunda.starts_with("HTTP/1.1 304"),
+        "o app inteiro desceu de novo numa reabertura: {segunda}"
+    );
+    assert!(
+        segunda.ends_with("\r\n\r\n"),
+        "um 304 com corpo é justamente o que ele existe para evitar"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn o_pwa_tem_o_que_o_celular_precisa_para_instalar() {
+    let sala = Sala::abrir(false).await;
+
+    for rota in ["/manifest.webmanifest", "/sw.js", "/icon-192.png", "/icon-512.png"] {
+        let r = http(sala.porta, &format!("GET {rota} HTTP/1.1\r\nHost: x\r\n\r\n")).await;
+        assert!(
+            r.starts_with("HTTP/1.1 200"),
+            "sem {rota} o celular não instala o app: {r}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_porta_da_sala_nao_serve_arquivo_nenhum_da_maquina() {
+    let sala = Sala::abrir(false).await;
+
+    // Travessia de caminho é o primeiro reflexo de quem encontra um servidor
+    // de arquivos numa porta exposta à internet. Aqui não existe caminho:
+    // as rotas são uma lista fechada, e o que não está nela é 404.
+    for alvo in [
+        "/../../../../Windows/win.ini",
+        "/..%2f..%2fetc/passwd",
+        "/app.js/../../Cargo.toml",
+        "/index.html%00.png",
+        "/src-tauri/tauri.conf.json",
+    ] {
+        let r = http(sala.porta, &format!("GET {alvo} HTTP/1.1\r\nHost: x\r\n\r\n")).await;
+        assert!(
+            r.starts_with("HTTP/1.1 404"),
+            "{alvo} devolveu algo que não era 404: {r}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn o_codigo_da_sala_nao_sai_junto_com_o_app() {
+    let sala = Sala::abrir(false).await;
+
+    // Tudo isto é servido antes de qualquer autenticação — não há como ser
+    // diferente, é a tela de login. Então nada aqui pode conter o segredo que
+    // a tela de login pede.
+    for rota in ["/", "/app.js", "/app.css", "/manifest.webmanifest", "/sw.js"] {
+        let r = http(sala.porta, &format!("GET {rota} HTTP/1.1\r\nHost: x\r\n\r\n")).await;
+        assert!(
+            !r.contains(&sala.code),
+            "o código da sala vazou em {rota} para quem só abriu o endereço"
+        );
+        assert!(
+            !r.contains("Anfitriã"),
+            "o nome do anfitrião vazou em {rota} antes de alguém entrar"
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -896,4 +1044,219 @@ async fn conexao_que_nao_se_apresenta_e_cortada() {
         2,
         "uma conexão que nunca se apresentou virou participante"
     );
+}
+
+/* ------------------------- ajuste de tamanho ----------------------------- */
+
+#[tokio::test(flavor = "multi_thread")]
+async fn convidado_ajusta_o_terminal_a_tela_dele() {
+    let sala = Sala::abrir(false).await;
+    sala.compartilha("s1", Mode::Rw);
+
+    let mut c = Convidado::conecta(sala.porta).await;
+    c.entra(&sala.code, "No celular").await;
+    c.envia(json!({ "t": "fit", "sessionId": "s1", "cols": 52, "rows": 20 }))
+        .await;
+
+    sala.pty.aguarda_ajustes("s1", vec![Some((52, 20))]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn quem_so_assiste_nao_mexe_no_tamanho() {
+    let sala = Sala::abrir(false).await;
+    sala.compartilha("so-olhando", Mode::Ro);
+
+    let mut c = Convidado::conecta(sala.porta).await;
+    c.entra(&sala.code, "Espiã").await;
+    c.envia(json!({ "t": "fit", "sessionId": "so-olhando", "cols": 40, "rows": 12 }))
+        .await;
+
+    // Uma tecla depois do `fit`, num terminal que aceita teclas, serve de
+    // marcador: quando ela chega, o `fit` já foi processado e descartado.
+    sala.compartilha("pode-digitar", Mode::Rw);
+    c.digita("pode-digitar", b"x").await;
+    sala.pty.aguarda_escrita("pode-digitar", b"x").await;
+
+    assert!(
+        sala.pty.ajustes_de("so-olhando").is_empty(),
+        "quem só assiste encolheu o terminal do anfitrião"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn terminal_nao_compartilhado_nao_muda_de_tamanho() {
+    let sala = Sala::abrir(false).await;
+    sala.compartilha("visivel", Mode::Rw);
+
+    let mut c = Convidado::conecta(sala.porta).await;
+    c.entra(&sala.code, "Curiosa").await;
+    c.envia(json!({ "t": "fit", "sessionId": "invisivel", "cols": 40, "rows": 12 }))
+        .await;
+
+    c.digita("visivel", b"x").await;
+    sala.pty.aguarda_escrita("visivel", b"x").await;
+
+    assert!(
+        sala.pty.ajustes_de("invisivel").is_empty(),
+        "um terminal que nunca foi compartilhado foi redimensionado pela rede"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tamanho_absurdo_e_aparado_antes_de_chegar_ao_pty() {
+    let sala = Sala::abrir(false).await;
+    sala.compartilha("s1", Mode::Rw);
+
+    let mut c = Convidado::conecta(sala.porta).await;
+    c.entra(&sala.code, "Zoeira").await;
+
+    // Uma coluna deixaria o terminal do anfitrião inutilizável com uma única
+    // mensagem — é o ataque mais barato que este recurso abriria.
+    c.envia(json!({ "t": "fit", "sessionId": "s1", "cols": 1, "rows": 1 }))
+        .await;
+    sala.pty.aguarda_ajustes("s1", vec![Some((20, 5))]).await;
+
+    c.envia(json!({ "t": "fit", "sessionId": "s1", "cols": 65000, "rows": 65000 }))
+        .await;
+    sala.pty
+        .aguarda_ajustes("s1", vec![Some((20, 5)), Some((400, 200))])
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn desistir_do_ajuste_devolve_o_tamanho() {
+    let sala = Sala::abrir(false).await;
+    sala.compartilha("s1", Mode::Rw);
+
+    let mut c = Convidado::conecta(sala.porta).await;
+    c.entra(&sala.code, "No celular").await;
+    c.envia(json!({ "t": "fit", "sessionId": "s1", "cols": 52, "rows": 20 }))
+        .await;
+    sala.pty.aguarda_ajustes("s1", vec![Some((52, 20))]).await;
+
+    c.envia(json!({ "t": "unfit", "sessionId": "s1" })).await;
+    sala.pty
+        .aguarda_ajustes("s1", vec![Some((52, 20)), None])
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn celular_que_some_da_rede_devolve_o_tamanho_sozinho() {
+    let sala = Sala::abrir(false).await;
+    sala.compartilha("s1", Mode::Rw);
+
+    let mut c = Convidado::conecta(sala.porta).await;
+    c.entra(&sala.code, "No celular").await;
+    c.envia(json!({ "t": "fit", "sessionId": "s1", "cols": 52, "rows": 20 }))
+        .await;
+    sala.pty.aguarda_ajustes("s1", vec![Some((52, 20))]).await;
+
+    // Sem `unfit`, sem `close`: o socket simplesmente morre, que é o que
+    // acontece quando o celular entra no elevador.
+    drop(c);
+
+    sala.pty
+        .aguarda_ajustes("s1", vec![Some((52, 20)), None])
+        .await;
+}
+
+/* ---------------------------- sala de bancada ---------------------------- */
+
+/// Uma sala de verdade, numa porta fixa, para olhar com os próprios olhos.
+///
+/// Não é um teste — é o banco de bancada do app do celular, e por isso é
+/// `#[ignore]`: ele não termina sozinho. O que ele resolve é um buraco real de
+/// verificação. Tudo o que a suíte prova aqui é sobre bytes e permissões;
+/// nada disso responde se a barra de teclas fica acima do teclado do celular
+/// ou se o terminal nasce no tamanho certo — e essas são justamente as
+/// perguntas que este app existe para acertar.
+///
+/// ```text
+/// cargo test --test qa_collab_e2e sala_de_bancada -- --ignored --nocapture
+/// ```
+///
+/// Depois é só abrir `http://localhost:7391/#c=<código>` — no navegador do
+/// computador com a janela estreita, ou no celular pelo IP da máquina.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "não termina: é para inspecionar o app do celular à mão"]
+async fn sala_de_bancada() {
+    /// Devolve o que recebe, como um shell devolveria o eco da digitação, e
+    /// responde `\r` com uma linha nova e um prompt.
+    struct Eco {
+        hub: Mutex<Option<Arc<CollabHub>>>,
+        seq: Mutex<u64>,
+    }
+
+    impl PtyAccess for Eco {
+        fn write(&self, session_id: &str, bytes: &[u8]) {
+            let guard = self.hub.lock();
+            let Some(hub) = guard.as_ref() else { return };
+            let mut saida = Vec::new();
+            for b in bytes {
+                match b {
+                    b'\r' => saida.extend_from_slice(b"\r\n$ "),
+                    0x7f => saida.extend_from_slice(b"\x08 \x08"),
+                    outro => saida.push(*outro),
+                }
+            }
+            let mut seq = self.seq.lock();
+            *seq += saida.len() as u64;
+            hub.on_pty_data(session_id, &saida, *seq);
+        }
+
+        fn snapshot(&self, _session_id: &str) -> Option<Snapshot> {
+            Some(Snapshot {
+                bytes: b"JARVIS - sala de bancada\r\n$ ".to_vec(),
+                seq: 0,
+            })
+        }
+
+        fn fit(&self, session_id: &str, view_id: &str, cols: u16, rows: u16) {
+            println!("[bancada] {session_id} ajustado para {cols}x{rows} por {view_id}");
+        }
+
+        fn unfit(&self, session_id: &str, view_id: &str) {
+            println!("[bancada] {session_id} solto por {view_id}");
+        }
+    }
+
+    let hub = Arc::new(CollabHub::new());
+    let pty = Arc::new(Eco {
+        hub: Mutex::new(Some(Arc::clone(&hub))),
+        seq: Mutex::new(0),
+    });
+
+    let (listener, porta) = server::bind(7391).await.expect("porta 7391 livre");
+    let code = hub.open(
+        &StartOptions {
+            name: Some("Bancada".into()),
+            host_name: Some("Anfitrião".into()),
+            port: porta,
+            require_approval: false,
+            public: false,
+        },
+        porta,
+        None,
+    );
+    hub.share(SharedTerminal {
+        session_id: "bancada".into(),
+        title: "PowerShell".into(),
+        mode: Mode::Rw,
+        cols: 80,
+        rows: 24,
+        alive: true,
+        folder: Some("JARVIS".into()),
+    });
+
+    let url = format!("http://localhost:{porta}/#c={code}");
+    eprintln!("\n  {url}\n");
+    // Também em arquivo: com a saída do `cargo test` num pipe, o endereço só
+    // apareceria quando a sala fechasse — e ela não fecha.
+    let _ = std::fs::write(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/bancada.txt"),
+        &url,
+    );
+
+    let pty_srv: Arc<dyn PtyAccess> = pty;
+    server::serve(listener, hub, pty_srv).await;
 }

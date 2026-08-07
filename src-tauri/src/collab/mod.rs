@@ -23,6 +23,7 @@
 pub mod protocol;
 pub mod server;
 pub mod tunnel;
+pub mod webapp;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
