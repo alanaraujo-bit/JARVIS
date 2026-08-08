@@ -8,8 +8,8 @@
  *     mesmo com o app fechado e o PC desligado.
  */
 
-// v4: concha com aviso de custo desatualizado (âmbar após 24h sem o PC).
-const CACHE = "jarvis-guardian-v4";
+// v5: barra de abas em cápsula de vidro flutuante (Liquid Glass) + ícones SVG.
+const CACHE = "jarvis-guardian-v5";
 const CONCHA = ["/", "/index.html", "/manifest.webmanifest", "/icon-256.png", "/icon-512.png"];
 
 self.addEventListener("install", (ev) => {

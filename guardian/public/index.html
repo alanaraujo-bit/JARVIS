@@ -34,14 +34,21 @@
      300ms de espera por ele) em qualquer elemento tocável. */
   html { -webkit-text-size-adjust: 100%; }
   body {
-    background: var(--bg);
+    /* Fundo ambiente: dois washes de cor bem sutis dão ao vidro da barra de
+       abas algo para refratar — é o que faz o "liquid glass" parecer vidro
+       de verdade em vez de um cinza chapado. */
+    background:
+      radial-gradient(130% 55% at 12% -8%, rgba(124, 108, 240, 0.16), transparent 62%),
+      radial-gradient(130% 55% at 88% 112%, rgba(52, 211, 153, 0.07), transparent 60%),
+      var(--bg);
+    background-attachment: fixed;
     color: var(--texto);
     font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
     /* As margens seguras: com a barra de status translúcida do iPhone o
        conteúdo corre sob ela — sem este padding, o relógio do sistema
        (hora/bateria) taparia o cabeçalho. O padding de baixo deixa folga
-       para a barra de abas fixa + a área de gestos do iPhone. */
-    padding: calc(16px + env(safe-area-inset-top)) 16px calc(110px + env(safe-area-inset-bottom));
+       para a cápsula de abas flutuante + a área de gestos do iPhone. */
+    padding: calc(16px + env(safe-area-inset-top)) 16px calc(120px + env(safe-area-inset-bottom));
     touch-action: manipulation;
     overscroll-behavior-y: none;
   }
@@ -144,47 +151,87 @@
   .erro-tela { color: var(--vermelho); font-size: 13px; padding: 12px; background: var(--card); border-radius: 10px; border: 1px solid var(--borda); }
   .atualizado { font-variant-numeric: tabular-nums; }
 
-  /* ---------- barra de abas inferior (visual de app nativo) ---------- */
+  /* ---------- barra de abas: cápsula de vidro flutuante (Liquid Glass) ----------
+     iOS 26: vidro translúcido que desfoca e satura o que está atrás, com
+     brilho especular no topo e borda de 0.5px. A cápsula flutua sobre o
+     conteúdo (não é uma faixa colada na borda) — o toque de "nativo". */
   .tabbar {
     position: fixed;
-    left: 0; right: 0; bottom: 0;
+    left: 50%;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
     z-index: 5;
     display: flex;
-    background: rgba(11, 13, 18, 0.86);
-    -webkit-backdrop-filter: blur(18px);
-    backdrop-filter: blur(18px);
-    border-top: 1px solid var(--borda);
-    padding: 8px 20px calc(6px + env(safe-area-inset-bottom));
+    gap: 2px;
+    padding: 5px;
+    border-radius: 26px;
+    /* Camada de vidro: gradiente de brilho por cima de um fundo translúcido. */
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03) 45%, rgba(255, 255, 255, 0.07)),
+      rgba(21, 25, 36, 0.55);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    backdrop-filter: blur(28px) saturate(180%);
+    border: 0.5px solid rgba(255, 255, 255, 0.14);
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.10),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25);
   }
   .tab {
-    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 2px;
-    background: none;
+    padding: 7px 22px;
     border: none;
-    cursor: pointer;
+    border-radius: 20px;
+    background: transparent;
     color: var(--texto-2);
-    font-size: 10px;
-    letter-spacing: .3px;
-    padding: 4px 0;
+    cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    transition: color 0.25s ease, background 0.25s ease;
   }
-  .tab .t-ico { font-size: 19px; line-height: 1; position: relative; }
+  .tab .t-ico {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 9px;
+    transition: background 0.25s ease, box-shadow 0.25s ease;
+  }
+  .tab .t-ico svg {
+    width: 22px;
+    height: 22px;
+    transition: transform 0.25s ease;
+  }
+  /* Ícone e rótulo em pílula: o item ativo ganha um vidro colorido próprio. */
+  .tab.ativo {
+    color: var(--roxo);
+  }
+  .tab.ativo .t-ico {
+    background: rgba(167, 139, 250, 0.16);
+    box-shadow: inset 0 0 0 0.5px rgba(167, 139, 250, 0.4);
+  }
+  .tab:active { opacity: 0.6; }
+  .tab:active .t-ico svg { transform: scale(0.88); }
+  .t-rotulo {
+    font-size: 10px;
+    letter-spacing: 0.2px;
+    font-weight: 600;
+  }
   /* Ponto âmbar na aba Custo: acende quando os dados de custo estão velhos
      (o PC não sincroniza há mais de 24h). */
   .t-dot {
     position: absolute;
     top: -2px;
-    right: -9px;
-    width: 7px; height: 7px;
+    right: -3px;
+    width: 8px; height: 8px;
     border-radius: 50%;
     background: var(--ambar);
-    box-shadow: 0 0 0 2px var(--bg);
+    box-shadow: 0 0 0 2px rgba(21, 25, 36, 0.85);
   }
-  .tab.ativo { color: var(--roxo); }
-  .tab:active { opacity: .6; }
 
   /* ---------- tela de estatísticas (custo por conta) ---------- */
   .stats-total {
@@ -345,15 +392,28 @@
     <button id="sair-token" hidden>sair</button>
   </div>
 
-  <!-- Barra de abas inferior. -->
-  <nav class="tabbar" id="tabbar">
-    <button class="tab ativo" id="tab-contas">
-      <span class="t-ico">⏱️</span>
-      <span>Janelas</span>
+  <!-- Barra de abas: cápsula de vidro flutuante, estilo app nativo. -->
+  <nav class="tabbar" id="tabbar" aria-label="Navegação principal">
+    <button class="tab ativo" id="tab-contas" aria-label="Janelas de cota">
+      <span class="t-ico">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="8.5"/>
+          <path d="M12 7.5V12l3 2"/>
+        </svg>
+      </span>
+      <span class="t-rotulo">Janelas</span>
     </button>
-    <button class="tab" id="tab-stats">
-      <span class="t-ico">💸<i class="t-dot" id="stats-dot" hidden></i></span>
-      <span>Custo</span>
+    <button class="tab" id="tab-stats" aria-label="Custo das contas">
+      <span class="t-ico">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3.5 17.5l6-6 3.5 3.5 7.5-7.5"/>
+          <path d="M14 7.5h6.5V14"/>
+        </svg>
+        <i class="t-dot" id="stats-dot" hidden></i>
+      </span>
+      <span class="t-rotulo">Custo</span>
     </button>
   </nav>
 
