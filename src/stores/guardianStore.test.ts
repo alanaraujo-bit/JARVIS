@@ -5,6 +5,7 @@ import { comparaContas, useGuardianStore, type GuardianConta } from "./guardianS
 /** Mocks do módulo IPC — o store não precisa do Tauri para ser testado. */
 const ipc = vi.hoisted(() => ({
   claudeAccountCredentials: vi.fn(),
+  claudeUsageByAccount: vi.fn(),
   configLoad: vi.fn(),
   configSave: vi.fn(),
 }));
@@ -41,6 +42,7 @@ describe("guardianStore — painel do guardião 24/7", () => {
     });
     ipc.configSave.mockResolvedValue({});
     ipc.claudeAccountCredentials.mockResolvedValue('{"claudeAiOauth":{"refreshToken":"x"}}');
+    ipc.claudeUsageByAccount.mockResolvedValue([]);
 
     useGuardianStore.setState({
       configuracao: null,
@@ -145,6 +147,7 @@ describe("guardianStore — painel do guardião 24/7", () => {
             name: "A",
             enabled: true,
             createdAt: 1,
+            custo: null,
             estado: {
               leaseAtivo: false,
               bloqueadaSemanal: false,
@@ -181,6 +184,96 @@ describe("guardianStore — painel do guardião 24/7", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  /* ------------------- sincronização de custos ------------------- */
+
+  function sumario(noData: boolean, parcial: Record<string, unknown> = {}) {
+    return {
+      currentModel: null,
+      currentEffort: null,
+      byModel: [],
+      tokensLast5h: 0,
+      tokensLast24h: 0,
+      costLast5hUsd: 0,
+      costTotalUsd: 0,
+      totalEvents: 0,
+      noData,
+      ...parcial,
+    };
+  }
+
+  test("sincronizarCustos empurra o custo real de cada conta para o guardião", async () => {
+    ipc.claudeUsageByAccount.mockResolvedValue([
+      { accountId: "acc-1", summary: sumario(false, { costTotalUsd: 1.23, costLast5hUsd: 0.01, tokensLast5h: 100, tokensLast24h: 5_000 }) },
+      { accountId: "acc-2", summary: sumario(false, { costTotalUsd: 9.5, costLast5hUsd: 0.5, tokensLast5h: 2_000, tokensLast24h: 80_000 }) },
+    ]);
+    await useGuardianStore.getState().carregar();
+
+    await useGuardianStore
+      .getState()
+      .sincronizarCustos([["acc-1", "dir-1"], ["acc-2", "dir-2"]]);
+
+    expect(ipc.claudeUsageByAccount).toHaveBeenCalledWith([["acc-1", "dir-1"], ["acc-2", "dir-2"]]);
+    const usos = (fetch as ReturnType<typeof vi.fn>).mock.calls.filter((c) =>
+      String(c[0]).endsWith("/usage"),
+    );
+    expect(usos).toHaveLength(2);
+    const corpo = (i: number) => JSON.parse(String(usos[i][1].body));
+    expect(usos[0][1].method).toBe("POST");
+    expect(String(usos[0][0])).toContain("/api/accounts/acc-1/usage");
+    expect(corpo(0)).toEqual({
+      costTotalUsd: 1.23,
+      costLast5hUsd: 0.01,
+      tokensLast5h: 100,
+      tokensLast24h: 5_000,
+    });
+    expect(corpo(1).costTotalUsd).toBe(9.5);
+  });
+
+  test("sincronizarCustos ignora contas sem dados", async () => {
+    ipc.claudeUsageByAccount.mockResolvedValue([
+      { accountId: "acc-1", summary: sumario(true) },
+      { accountId: "acc-2", summary: sumario(false, { costTotalUsd: 2 }) },
+    ]);
+    await useGuardianStore.getState().carregar();
+
+    await useGuardianStore
+      .getState()
+      .sincronizarCustos([["acc-1", "dir-1"], ["acc-2", "dir-2"]]);
+
+    const usos = (fetch as ReturnType<typeof vi.fn>).mock.calls.filter((c) =>
+      String(c[0]).endsWith("/usage"),
+    );
+    expect(usos).toHaveLength(1);
+    expect(String(usos[0][0])).toContain("/api/accounts/acc-2/usage");
+  });
+
+  test("sincronizarCustos não faz nada sem configuração ou sem pares", async () => {
+    ipc.configLoad.mockResolvedValue({ guardian: { url: "", token: "" } });
+    await useGuardianStore.getState().carregar();
+
+    await useGuardianStore.getState().sincronizarCustos([["acc-1", "dir-1"]]);
+    expect(ipc.claudeUsageByAccount).not.toHaveBeenCalled();
+
+    // Sem pares não há o que ler nem enviar.
+    await useGuardianStore.getState().sincronizarCustos([]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test("sincronizarCustos nunca quebra quando o IPC falha (custo é melhoria)", async () => {
+    ipc.claudeUsageByAccount.mockRejectedValue(new Error("offline"));
+    await useGuardianStore.getState().carregar();
+
+    await expect(
+      useGuardianStore.getState().sincronizarCustos([["acc-1", "dir-1"]]),
+    ).resolves.toBeUndefined();
+    // Nenhum POST de custo foi tentado (o fetch do status no carregar é legítimo).
+    const usos = (fetch as ReturnType<typeof vi.fn>).mock.calls.filter((c) =>
+      String(c[0]).endsWith("/usage"),
+    );
+    expect(usos).toHaveLength(0);
+    expect(useGuardianStore.getState().erro).toBeNull();
+  });
+
   /* ------------------- ordenação inteligente ------------------- */
 
   function conta(parcial: Partial<GuardianConta> & { id: string }): GuardianConta {
@@ -188,6 +281,7 @@ describe("guardianStore — painel do guardião 24/7", () => {
       name: parcial.id,
       enabled: true,
       createdAt: 1,
+      custo: null,
       estado: {
         leaseAtivo: false,
         bloqueadaSemanal: false,

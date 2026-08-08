@@ -45,6 +45,7 @@ Todas as rotas exigem `Authorization: Bearer <JARVIS_GUARDIAN_TOKEN>`
 | PATCH | `/api/accounts/:id` | `{ enabled }` ou `{ name }` |
 | POST | `/api/accounts/:id/lease` | heartbeat "estou usando" (JARVIS, 2 min) |
 | POST | `/api/accounts/:id/ping` | força um ping no próximo ciclo |
+| POST | `/api/accounts/:id/usage` | custo real em $ que o JARVIS no PC sincroniza (alimenta a aba Custo do celular) |
 | GET | `/api/push/vapid` | chave pública VAPID (sem auth — o PWA precisa antes do token) |
 | POST | `/api/push/subscribe` | registra o aparelho `{ subscription }` para Web Push |
 | DELETE | `/api/push/subscribe` | remove o aparelho `{ endpoint }` |
@@ -106,6 +107,12 @@ curl -X POST https://SEU-APP.up.railway.app/api/accounts \
 local no mesmo quadro e a atualização chega atrás), sem zoom por pinça ou
 duplo-toque, e a barra de status (hora/bateria) respeita as margens seguras
 em vez de cobrir o conteúdo.
+
+**Duas abas na base:** ⏱️ **Janelas** (cota ao vivo, sempre) e 💸 **Custo**
+(o ranking "quem mais gastou" em $, tokens 24h/5h e há quanto tempo
+sincronizou). O custo real só existe nos arquivos do PC — o JARVIS desktop
+sincroniza com o guardião a cada 10 min enquanto estiver aberto; sem PC
+aberto a aba Custo explica e mostra a cota ao vivo mesmo assim.
 
 > Nota iOS: o app instalado na tela inicial tem **armazenamento separado** do
 > Safari. Se você digitou o token no navegador e depois instalou, o app

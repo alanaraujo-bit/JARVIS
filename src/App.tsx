@@ -1186,6 +1186,44 @@ export default function App() {
     return () => window.clearInterval(t);
   }, []);
 
+  /**
+   * Sincronização de custos com o guardião: o custo real (em $) só existe nos
+   * arquivos do PC (a CLI grava lá), então enquanto o JARVIS estiver aberto
+   * ele empurra o valor de cada conta para o guardião a cada 10 min. É isso
+   * que alimenta a tela de estatísticas do celular — sem o PC aberto o
+   * celular mostra a cota ao vivo mesmo assim, só sem o ranking em $.
+   */
+  useEffect(() => {
+    let retry: number | undefined;
+    let tentativas = 0;
+    const sync = () => {
+      const { contas, status } = useAccountStore.getState();
+      const pares: [string, string][] = [];
+      for (const c of contas) {
+        const dir = status[c.id]?.configDir;
+        if (dir) pares.push([c.id, dir]);
+      }
+      // Contas/status ainda carregando (primeiro boot): a primeira sincronização
+      // vale a pena — tenta a cada 15s por até ~5 min e então desiste até o
+      // próximo ciclo de 10 min (teto evita timer infinito se o status nunca
+      // carregar). Em sucesso, o contador zera para o próximo boot.
+      if (pares.length === 0) {
+        if (tentativas >= 20) return;
+        tentativas += 1;
+        retry = window.setTimeout(sync, 15_000);
+        return;
+      }
+      tentativas = 0;
+      void useGuardianStore.getState().sincronizarCustos(pares);
+    };
+    sync();
+    const t = window.setInterval(sync, 10 * 60_000);
+    return () => {
+      window.clearInterval(t);
+      if (retry) window.clearTimeout(retry);
+    };
+  }, []);
+
   /* ---------------------------- atalhos -------------------------------- */
 
   const shortcutActions = useMemo(

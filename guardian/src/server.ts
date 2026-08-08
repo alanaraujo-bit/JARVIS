@@ -97,7 +97,10 @@ export class ApiServer {
 
       const mDel = rota.match(/^\/api\/accounts\/([^/]+)$/);
       if (mDel && (req.method === "DELETE" || req.method === "PATCH")) {
-        const id = mDel[1];
+        // Ids de conta são e-mails (têm `@`), então o JARVIS manda URL-encoded
+        // e `URL.pathname` mantém o `%40` — sem decodificar aqui, todo
+        // lease/ping/usage de conta real daria 404 silencioso.
+        const id = descodifica(mDel[1]);
         if (req.method === "DELETE") {
           this.store.remove(id);
           this.json(res, 200, { ok: true });
@@ -117,9 +120,30 @@ export class ApiServer {
         return;
       }
 
+      const mUso = rota.match(/^\/api\/accounts\/([^/]+)\/usage$/);
+      if (mUso && req.method === "POST") {
+        // Custo real vindo do JARVIS no PC (nunca exposto de volta). O
+        // celular mostra na tela de estatísticas junto com a cota ao vivo.
+        void this.lerJson(req).then((body) => {
+          const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+          try {
+            this.store.setCusto(descodifica(mUso[1]), {
+              costTotalUsd: num(body?.costTotalUsd),
+              costLast5hUsd: num(body?.costLast5hUsd),
+              tokensLast5h: num(body?.tokensLast5h),
+              tokensLast24h: num(body?.tokensLast24h),
+            });
+            this.json(res, 200, { ok: true });
+          } catch (e) {
+            this.json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+          }
+        });
+        return;
+      }
+
       const mPing = rota.match(/^\/api\/accounts\/([^/]+)\/ping$/);
       if (mPing && req.method === "POST") {
-        const conta = this.store.get(mPing[1]);
+        const conta = this.store.get(descodifica(mPing[1]));
         if (!conta) {
           this.json(res, 404, { error: "conta não existe" });
           return;
@@ -169,7 +193,7 @@ export class ApiServer {
 
       const mLease = rota.match(/^\/api\/accounts\/([^/]+)\/lease$/);
       if (mLease && req.method === "POST") {
-        const conta = this.store.get(mLease[1]);
+        const conta = this.store.get(descodifica(mLease[1]));
         if (!conta) {
           this.json(res, 404, { error: "conta não existe" });
           return;
@@ -200,6 +224,7 @@ export class ApiServer {
       name: a.name,
       enabled: a.enabled,
       createdAt: a.createdAt,
+      custo: a.custo,
       estado: {
         leaseAtivo: Date.now() < rt.leaseUntil,
         bloqueadaSemanal: rt.blockedWeekly,
@@ -290,6 +315,15 @@ export class ApiServer {
     const texto = JSON.stringify(body);
     res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
     res.end(texto);
+  }
+}
+
+/** Decodifica um id de conta vindo da URL (o JARVIS envia e-mails URL-encoded). */
+function descodifica(seg: string): string {
+  try {
+    return decodeURIComponent(seg);
+  } catch {
+    return seg; // malformado: deixa como veio, o store devolve 404
   }
 }
 

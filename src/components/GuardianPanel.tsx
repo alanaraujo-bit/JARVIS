@@ -19,6 +19,7 @@ import { Icon } from "./Icon";
 import {
   comparaContas,
   useGuardianStore,
+  type CustoPc,
   type GuardianConta,
 } from "../stores/guardianStore";
 import { useAccountStore } from "../stores/accountStore";
@@ -43,6 +44,26 @@ function formatarContagem(ms: number): string {
 function formatarHora(ms: number): string {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** "$12,34" — o formato dos valores de custo (estimativa local, como no celular). */
+function formatarUsd(v: number): string {
+  return "$" + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** "50k", "1,2M", "800" — tokens legíveis. */
+function formatarTokens(n: number): string {
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(".", ",") + "M";
+  if (n >= 1e3) return Math.round(n / 1e3).toLocaleString("pt-BR") + "k";
+  return String(n);
+}
+
+/** "agora", "12min atrás", "3h atrás" — há quanto tempo o PC sincronizou. */
+function idadeDe(ms: number, agora: number): string {
+  const diff = agora - ms;
+  if (diff < 60_000) return "agora mesmo";
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}min atrás`;
+  return `${Math.floor(diff / 3600_000)}h atrás`;
 }
 
 export function GuardianPanel({ onEntrar }: Props) {
@@ -203,6 +224,17 @@ export function GuardianPanel({ onEntrar }: Props) {
             </div>
           </div>
         </section>
+
+        {/* ------------------------- custo ------------------------- */}
+        {configurado && porId.size > 0 && (
+          <section className="guardian-secao">
+            <div className="guardian-secao-head">
+              <span className="guardian-secao-titulo">Custo estimado</span>
+              <span className="guardian-contagem">do mais caro para o mais barato</span>
+            </div>
+            <CustoRanking contas={contas} porId={porId} agora={agora} />
+          </section>
+        )}
 
         {/* ------------------------- contas ------------------------- */}
         <section className="guardian-secao">
@@ -379,6 +411,87 @@ function Janela7d({ g, agora }: { g: GuardianConta; agora: number }) {
         {pct >= 100 ? "no limite" : sd.resetsAtMs && sd.resetsAtMs > agora ? `reset ${formatarHora(sd.resetsAtMs)}` : ""}
       </span>
     </span>
+  );
+}
+
+/**
+ * Ranking de custo do painel — o espelho desktop da aba "Custo" do celular.
+ *
+ * Ordena pelo custo estimado real (que o PC sincroniza com o guardião a cada
+ * 10 min enquanto o JARVIS estiver aberto): quem gastou mais no topo, barra
+ * proporcional ao maior valor, tokens e frescor da sincronização. Contas que
+ * ainda nunca sincronizaram ficam no rodapé, com o mesmo aviso do celular.
+ */
+function CustoRanking({
+  contas,
+  porId,
+  agora,
+}: {
+  contas: ClaudeAccountPayload[];
+  porId: Map<string, GuardianConta>;
+  agora: number;
+}) {
+  const comCusto = contas
+    .map((c) => ({ conta: c, g: porId.get(c.id) }))
+    .filter(
+      // O predicado garante custo presente e finito — o guardião entrega
+      // sempre número; o tipo cruza com CustoPc para dispensar `!`.
+      (x): x is { conta: ClaudeAccountPayload; g: GuardianConta & { custo: CustoPc } } =>
+        !!x.g?.custo && Number.isFinite(x.g.custo.costTotalUsd),
+    )
+    .sort((a, b) => b.g.custo.costTotalUsd - a.g.custo.costTotalUsd);
+  const semCusto = contas.filter((c) => !porId.get(c.id)?.custo);
+  const total = comCusto.reduce((s, x) => s + x.g.custo.costTotalUsd, 0);
+  const max = comCusto.length > 0 ? Math.max(...comCusto.map((x) => x.g.custo.costTotalUsd)) : 0;
+
+  if (comCusto.length === 0) {
+    return (
+      <p className="guardian-vazio">
+        Ainda sem dados de custo. O JARVIS sincroniza automaticamente a cada 10
+        min enquanto estiver aberto — deixe-o rodando um pouco e o ranking
+        aparece aqui (e no celular).
+      </p>
+    );
+  }
+
+  return (
+    <div className="guardian-custo">
+      <div className="guardian-custo-total">
+        <strong>{formatarUsd(total)}</strong>
+        <span>
+          total estimado · {comCusto.length} de {contas.length} contas com dados
+        </span>
+      </div>
+      <ul className="guardian-custo-lista">
+        {comCusto.map(({ conta, g }, i) => {
+          const custo = g.custo;
+          const largura = max > 0 ? Math.max(4, (custo.costTotalUsd / max) * 100) : 0;
+          return (
+            <li key={conta.id} className="guardian-custo-item">
+              <span className="guardian-custo-pos">{i + 1}</span>
+              <span className="guardian-custo-nome">
+                <span className="accounts-dot" style={{ background: conta.color }} />
+                {conta.name}
+              </span>
+              <span className="guardian-custo-valor">{formatarUsd(custo.costTotalUsd)}</span>
+              <span className="guardian-custo-barra">
+                <i style={{ width: `${largura}%` }} />
+              </span>
+              <span className="guardian-custo-meta">
+                {formatarTokens(custo.tokensLast24h)} tokens em 24h ·{" "}
+                {formatarTokens(custo.tokensLast5h)} em 5h · sincronizado{" "}
+                {idadeDe(custo.updatedAt, agora)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {semCusto.length > 0 && (
+        <p className="guardian-custo-sem">
+          {semCusto.map((c) => c.name).join(" · ")} — ainda sem dados de custo.
+        </p>
+      )}
+    </div>
   );
 }
 

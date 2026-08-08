@@ -14,6 +14,15 @@ import path from "node:path";
 import { decrypt, encrypt } from "./crypto.js";
 import type { UsageSnapshot } from "./anthropic.js";
 
+/** Custo real vindo do JARVIS no PC (sincronizado enquanto o app está aberto). */
+export interface CustoPc {
+  costTotalUsd: number;
+  costLast5hUsd: number;
+  tokensLast5h: number;
+  tokensLast24h: number;
+  updatedAt: number;
+}
+
 export interface AccountRecord {
   id: string;
   name: string;
@@ -21,6 +30,8 @@ export interface AccountRecord {
   credentialsEnc: string;
   enabled: boolean;
   createdAt: number;
+  /** Último custo sincronizado pelo PC. `null` = ainda não sincronizou. */
+  custo: CustoPc | null;
 }
 
 /** Estado em memória de uma conta — o que o agendador mantém vivo. */
@@ -143,6 +154,8 @@ export class Store {
       if (!validaId(r.id)) continue;
       this.accounts.set(r.id, {
         ...r,
+        // Config de antes da sincronização de custo não tem o campo.
+        custo: r.custo ?? null,
         runtime: novoRuntime(),
       });
     }
@@ -156,6 +169,7 @@ export class Store {
       credentialsEnc: a.credentialsEnc,
       enabled: a.enabled,
       createdAt: a.createdAt,
+      custo: a.custo,
     }));
     const tmp = this.file + ".tmp";
     fs.writeFileSync(tmp, JSON.stringify(records, null, 2));
@@ -179,6 +193,7 @@ export class Store {
       credentialsEnc: encrypt(input.credentialsJson, this.secret),
       enabled: input.enabled ?? true,
       createdAt: Date.now(),
+      custo: null,
       runtime: novoRuntime(),
     };
     this.accounts.set(input.id, account);
@@ -209,6 +224,18 @@ export class Store {
     const a = this.accounts.get(id);
     if (!a) throw new Error(`conta ${id} não existe`);
     a.credentialsEnc = encrypt(credentialsJson, this.secret);
+    this.save();
+  }
+
+  /**
+   * Atualiza o custo real da conta, como o JARVIS no PC envia de tempos em
+   * tempos. `updatedAt` é marcado aqui no servidor: o relógio do guardião é
+   * o que vale para o celular saber há quanto tempo os dados são frescos.
+   */
+  setCusto(id: string, custo: Omit<CustoPc, "updatedAt">): void {
+    const a = this.accounts.get(id);
+    if (!a) throw new Error(`conta ${id} não existe`);
+    a.custo = { ...custo, updatedAt: Date.now() };
     this.save();
   }
 

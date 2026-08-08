@@ -23,6 +23,7 @@ import { create } from "zustand";
 
 import {
   claudeAccountCredentials,
+  claudeUsageByAccount,
   configLoad,
   configSave,
   type GuardianConfigPayload,
@@ -61,12 +62,23 @@ export interface GuardianConta {
   name: string;
   enabled: boolean;
   createdAt: number;
+  /** Último custo que o PC sincronizou. `null` = ainda nunca sincronizou. */
+  custo: CustoPc | null;
   estado: GuardianContaEstado;
 }
 
 export interface GuardianStatus {
   agora: number;
   contas: GuardianConta[];
+}
+
+/** Custo real de uma conta, como o PC sincroniza com o guardião. */
+export interface CustoPc {
+  costTotalUsd: number;
+  costLast5hUsd: number;
+  tokensLast5h: number;
+  tokensLast24h: number;
+  updatedAt: number;
 }
 
 interface GuardianStore {
@@ -93,6 +105,12 @@ interface GuardianStore {
    * guardião — o resto é ignorado aqui, sem queimar uma chamada.
    */
   sinalizarUso: (ids: string[]) => Promise<void>;
+  /**
+   * Sincroniza o custo real (em $) das contas com o guardião — o que alimenta
+   * a tela de estatísticas do celular. O custo só existe nos arquivos do PC,
+   * então ele é lido daqui e empurrado para lá; falha não derruba nada.
+   */
+  sincronizarCustos: (pares: [string, string][]) => Promise<void>;
 }
 
 /**
@@ -312,6 +330,31 @@ export const useGuardianStore = create<GuardianStore>((set, get) => ({
       void api(cfg, `/api/accounts/${encodeURIComponent(id)}/lease`, { method: "POST" }).catch(
         () => {},
       );
+    }
+  },
+
+  sincronizarCustos: async (pares) => {
+    const cfg = get().configuracao;
+    // Mesma guarda do `atualizarStatus`: config vazio não é configurado.
+    if (!cfg || !cfg.url.trim() || !cfg.token || pares.length === 0) return;
+    let resumos;
+    try {
+      resumos = await claudeUsageByAccount(pares);
+    } catch {
+      // Sem config/offline: custos são melhoria, nunca bloqueiam nada.
+      return;
+    }
+    for (const { accountId, summary } of resumos) {
+      if (summary.noData) continue;
+      void api(cfg, `/api/accounts/${encodeURIComponent(accountId)}/usage`, {
+        method: "POST",
+        body: {
+          costTotalUsd: summary.costTotalUsd,
+          costLast5hUsd: summary.costLast5hUsd,
+          tokensLast5h: summary.tokensLast5h,
+          tokensLast24h: summary.tokensLast24h,
+        },
+      }).catch(() => {});
     }
   },
 }));
