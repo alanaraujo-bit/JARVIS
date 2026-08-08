@@ -25,7 +25,7 @@ import { useNotesStore } from "./stores/notesStore";
 import { useUiStore } from "./stores/uiStore";
 import { useUpdateStore } from "./stores/updateStore";
 import { useAccountStore } from "./stores/accountStore";
-import { useGuardianStore } from "./stores/guardianStore";
+import { paresDeCusto, useGuardianStore } from "./stores/guardianStore";
 import { useCollabStore } from "./stores/collabStore";
 import { onCollabAiAsk } from "./lib/collabIpc";
 import { Icon, shellIcon } from "./components/Icon";
@@ -1198,11 +1198,7 @@ export default function App() {
     let tentativas = 0;
     const sync = () => {
       const { contas, status } = useAccountStore.getState();
-      const pares: [string, string][] = [];
-      for (const c of contas) {
-        const dir = status[c.id]?.configDir;
-        if (dir) pares.push([c.id, dir]);
-      }
+      const pares = paresDeCusto(contas, status);
       // Contas/status ainda carregando (primeiro boot): a primeira sincronização
       // vale a pena — tenta a cada 15s por até ~5 min e então desiste até o
       // próximo ciclo de 10 min (teto evita timer infinito se o status nunca

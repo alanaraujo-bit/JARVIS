@@ -26,6 +26,8 @@ import {
   claudeUsageByAccount,
   configLoad,
   configSave,
+  type ClaudeAccountPayload,
+  type ClaudeAccountStatus,
   type GuardianConfigPayload,
 } from "../lib/ipc";
 
@@ -111,6 +113,11 @@ interface GuardianStore {
    * então ele é lido daqui e empurrado para lá; falha não derruba nada.
    */
   sincronizarCustos: (pares: [string, string][]) => Promise<void>;
+  /**
+   * Limpa o custo sincronizado das contas indicadas (DELETE /usage). O
+   * próximo sync do PC repõe sozinho — é um reset, não perde nada.
+   */
+  limparCustos: (ids: string[]) => Promise<void>;
 }
 
 /**
@@ -155,6 +162,24 @@ export function comparaContas(
     if (ka[i] !== kb[i]) return ka[i] - kb[i];
   }
   return 0;
+}
+
+/**
+ * Monta os pares `[id, configDir]` que a sincronização de custos usa, lendo
+ * o diretório de cada conta do status. Compartilhado entre o App (ciclo de
+ * 10 min) e o painel (botão "sincronizar agora") para os dois nunca
+ * divergirem em qual conta sincronizar.
+ */
+export function paresDeCusto(
+  contas: ClaudeAccountPayload[],
+  status: Record<string, ClaudeAccountStatus>,
+): [string, string][] {
+  const pares: [string, string][] = [];
+  for (const c of contas) {
+    const dir = status[c.id]?.configDir;
+    if (dir) pares.push([c.id, dir]);
+  }
+  return pares;
 }
 
 /** Consulta o guardião. Timeout curto: o painel não pode travar esperando. */
@@ -344,17 +369,37 @@ export const useGuardianStore = create<GuardianStore>((set, get) => ({
       // Sem config/offline: custos são melhoria, nunca bloqueiam nada.
       return;
     }
-    for (const { accountId, summary } of resumos) {
-      if (summary.noData) continue;
-      void api(cfg, `/api/accounts/${encodeURIComponent(accountId)}/usage`, {
-        method: "POST",
-        body: {
-          costTotalUsd: summary.costTotalUsd,
-          costLast5hUsd: summary.costLast5hUsd,
-          tokensLast5h: summary.tokensLast5h,
-          tokensLast24h: summary.tokensLast24h,
-        },
-      }).catch(() => {});
-    }
+    // Espera os envios terminarem (falhas são silenciosas). O botão
+    // "sincronizar agora" precisa saber quando acabou para então buscar o
+    // status novo — sem isto, o refresh chegaria antes do custo no servidor.
+    await Promise.all(
+      resumos
+        .filter(({ summary }) => !summary.noData)
+        .map(({ accountId, summary }) =>
+          api(cfg, `/api/accounts/${encodeURIComponent(accountId)}/usage`, {
+            method: "POST",
+            body: {
+              costTotalUsd: summary.costTotalUsd,
+              costLast5hUsd: summary.costLast5hUsd,
+              tokensLast5h: summary.tokensLast5h,
+              tokensLast24h: summary.tokensLast24h,
+            },
+          }).catch(() => {}),
+        ),
+    );
+  },
+
+  limparCustos: async (ids) => {
+    const cfg = get().configuracao;
+    if (!cfg || !cfg.url.trim() || !cfg.token || ids.length === 0) return;
+    await Promise.all(
+      ids.map((id) =>
+        api(cfg, `/api/accounts/${encodeURIComponent(id)}/usage`, {
+          method: "DELETE",
+        }).catch(() => {}),
+      ),
+    );
+    // O status reflete a limpeza (o ranking some até o próximo sync do PC).
+    await get().atualizarStatus();
   },
 }));

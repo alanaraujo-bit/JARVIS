@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import {
   comparaContas,
+  paresDeCusto,
   useGuardianStore,
   type CustoPc,
   type GuardianConta,
@@ -58,12 +59,18 @@ function formatarTokens(n: number): string {
   return String(n);
 }
 
-/** "agora", "12min atrás", "3h atrás" — há quanto tempo o PC sincronizou. */
+/** Mesmo critério do celular: 24h sem o PC sincronizar = custo velho. */
+const CUSTO_VELHO_MS = 24 * 3600_000;
+
+/** "agora", "12min atrás", "3h atrás", "2 dias atrás" — há quanto o PC sincronizou. */
 function idadeDe(ms: number, agora: number): string {
   const diff = agora - ms;
   if (diff < 60_000) return "agora mesmo";
   if (diff < 3600_000) return `${Math.floor(diff / 60_000)}min atrás`;
-  return `${Math.floor(diff / 3600_000)}h atrás`;
+  const h = Math.floor(diff / 3600_000);
+  if (h < 24) return `${h}h atrás`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? "1 dia atrás" : `${d} dias atrás`;
 }
 
 export function GuardianPanel({ onEntrar }: Props) {
@@ -79,6 +86,8 @@ export function GuardianPanel({ onEntrar }: Props) {
   const removerConta = useGuardianStore((s) => s.removerConta);
   const alternarConta = useGuardianStore((s) => s.alternarConta);
   const pingarAgora = useGuardianStore((s) => s.pingarAgora);
+  const sincronizarCustos = useGuardianStore((s) => s.sincronizarCustos);
+  const limparCustos = useGuardianStore((s) => s.limparCustos);
 
   const contas = useAccountStore((s) => s.contas);
   const statusContas = useAccountStore((s) => s.status);
@@ -88,6 +97,10 @@ export function GuardianPanel({ onEntrar }: Props) {
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null);
   /** Marca o instante do último refresh para a legenda "atualizado às". */
   const [atualizadoEm, setAtualizadoEm] = useState<number | null>(null);
+  /** O botão "sincronizar agora" está rodando. */
+  const [sincronizandoCusto, setSincronizandoCusto] = useState(false);
+  /** O "limpar custos" pediu confirmação (2 passos). */
+  const [confirmandoLimpeza, setConfirmandoLimpeza] = useState(false);
   const [agora, setAgora] = useState(() => Date.now());
   const caixaRef = useRef<HTMLDivElement | null>(null);
 
@@ -119,6 +132,13 @@ export function GuardianPanel({ onEntrar }: Props) {
     }
   }, [configuracao, aberto]);
 
+  // Se o custo sumir (ex.: limpo em outro aparelho), a confirmação pendente
+  // não pode reaparecer sozinha na próxima vez que houver custo.
+  useEffect(() => {
+    const temCusto = (status?.contas ?? []).some((c) => !!c.custo);
+    if (!temCusto) setConfirmandoLimpeza(false);
+  }, [status]);
+
   useEffect(() => {
     if (aberto) caixaRef.current?.focus();
   }, [aberto]);
@@ -127,6 +147,9 @@ export function GuardianPanel({ onEntrar }: Props) {
 
   const configurado = !!configuracao?.url && !!configuracao?.token;
   const porId = new Map(status?.contas.map((c) => [c.id, c]) ?? []);
+  // Só mostra o "limpar custos" quando há custo para limpar; a mesma lista
+  // alimenta a ação (uma iteração só).
+  const idsComCusto = [...porId.values()].filter((g) => !!g.custo).map((g) => g.id);
   // Ordem inteligente (a mesma do celular): disponível agora primeiro,
   // liberando em seguida, travadas/pausadas por último.
   const contasOrdenadas = [...contas].sort((a, b) =>
@@ -136,6 +159,29 @@ export function GuardianPanel({ onEntrar }: Props) {
   const salvar = async () => {
     const ok = await salvarConfiguracao({ url: url.trim(), token: token.trim() });
     if (ok) setAtualizadoEm(Date.now());
+  };
+
+  /**
+   * Lê o gasto real das contas no PC e manda ao guardião agora — sem esperar
+   * o ciclo automático de 10 min. Depois busca o status novo, que traz o
+   * custo fresco para o ranking e para o celular.
+   */
+  const sincronizarCustoAgora = async () => {
+    if (sincronizandoCusto) return;
+    // Mesmo helper do ciclo automático de 10 min — os dois nunca divergem.
+    const pares = paresDeCusto(contas, statusContas);
+    if (pares.length === 0) return;
+    setSincronizandoCusto(true);
+    await sincronizarCustos(pares);
+    setSincronizandoCusto(false);
+    void atualizarStatus();
+  };
+
+  /** Apaga o custo de todas as contas (o próximo sync do PC repõe). */
+  const limparCustosAgora = async () => {
+    if (idsComCusto.length === 0) return;
+    setConfirmandoLimpeza(false);
+    await limparCustos(idsComCusto);
   };
 
   return (
@@ -230,7 +276,42 @@ export function GuardianPanel({ onEntrar }: Props) {
           <section className="guardian-secao">
             <div className="guardian-secao-head">
               <span className="guardian-secao-titulo">Custo estimado</span>
-              <span className="guardian-contagem">do mais caro para o mais barato</span>
+              <span className="guardian-secao-acoes">
+                <span className="guardian-contagem">do mais caro para o mais barato</span>
+                <button
+                  className="chip subtle"
+                  disabled={sincronizandoCusto}
+                  onClick={() => void sincronizarCustoAgora()}
+                  title="Lê o gasto real no PC e envia ao guardião agora, sem esperar os 10 min"
+                >
+                  <Icon name="refresh" size={13} />
+                  {sincronizandoCusto ? "Sincronizando…" : "Sincronizar agora"}
+                </button>
+                {idsComCusto.length > 0 &&
+                  (confirmandoLimpeza ? (
+                    <>
+                      <button
+                        className="chip danger"
+                        onClick={() => void limparCustosAgora()}
+                        title="Apaga o custo sincronizado de todas as contas no guardião"
+                      >
+                        Limpar mesmo
+                      </button>
+                      <button className="chip subtle" onClick={() => setConfirmandoLimpeza(false)}>
+                        Cancelar
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="chip subtle"
+                      onClick={() => setConfirmandoLimpeza(true)}
+                      title="Apaga o custo sincronizado das contas — a próxima sincronização do PC repõe"
+                    >
+                      <Icon name="trash" size={13} />
+                      Limpar custos
+                    </button>
+                  ))}
+              </span>
             </div>
             <CustoRanking contas={contas} porId={porId} agora={agora} />
           </section>
@@ -466,6 +547,8 @@ function CustoRanking({
         {comCusto.map(({ conta, g }, i) => {
           const custo = g.custo;
           const largura = max > 0 ? Math.max(4, (custo.costTotalUsd / max) * 100) : 0;
+          // Guarda defensiva: sem updatedAt (payload antigo/estranho), não é velho.
+          const desatualizado = !!custo.updatedAt && agora - custo.updatedAt > CUSTO_VELHO_MS;
           return (
             <li key={conta.id} className="guardian-custo-item">
               <span className="guardian-custo-pos">{i + 1}</span>
@@ -477,7 +560,8 @@ function CustoRanking({
               <span className="guardian-custo-barra">
                 <i style={{ width: `${largura}%` }} />
               </span>
-              <span className="guardian-custo-meta">
+              <span className={`guardian-custo-meta${desatualizado ? " velho" : ""}`}>
+                {desatualizado && "⚠️ "}
                 {formatarTokens(custo.tokensLast24h)} tokens em 24h ·{" "}
                 {formatarTokens(custo.tokensLast5h)} em 5h · sincronizado{" "}
                 {idadeDe(custo.updatedAt, agora)}

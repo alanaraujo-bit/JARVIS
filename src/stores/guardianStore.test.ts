@@ -274,6 +274,68 @@ describe("guardianStore — painel do guardião 24/7", () => {
     expect(useGuardianStore.getState().erro).toBeNull();
   });
 
+  test("sincronizarCustos espera os envios terminarem antes de resolver", async () => {
+    ipc.claudeUsageByAccount.mockResolvedValue([
+      { accountId: "acc-1", summary: sumario(false, { costTotalUsd: 5 }) },
+    ]);
+    await useGuardianStore.getState().carregar();
+
+    // O POST de custo fica pendurado até a gente soltar a trava — se o store
+    // resolve sem esperar, o botão "sincronizar agora" buscaria o status
+    // antes do custo chegar no servidor.
+    let soltar!: () => void;
+    const trava = new Promise<void>((r) => (soltar = r));
+    (fetch as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      await trava;
+      return respostaDe("usage", { ok: true });
+    });
+
+    let terminou = false;
+    const p = useGuardianStore
+      .getState()
+      .sincronizarCustos([["acc-1", "dir-1"]])
+      .finally(() => {
+        terminou = true;
+      });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(terminou).toBe(false); // ainda aguardando o POST terminar
+
+    soltar();
+    await p;
+    expect(terminou).toBe(true);
+  });
+
+  test("limparCustos chama DELETE /usage nas contas indicadas e atualiza o status", async () => {
+    await useGuardianStore.getState().carregar();
+
+    await useGuardianStore.getState().limparCustos(["acc-1", "acc-2"]);
+
+    const dels = (fetch as ReturnType<typeof vi.fn>).mock.calls.filter((c) =>
+      String(c[0]).includes("/usage"),
+    );
+    expect(dels).toHaveLength(2);
+    expect(String(dels[0][0])).toContain("/api/accounts/acc-1/usage");
+    expect(String(dels[1][0])).toContain("/api/accounts/acc-2/usage");
+    expect(dels[0][1].method).toBe("DELETE");
+    expect(dels[1][1].method).toBe("DELETE");
+    // O refresh do status também acontece (o ranking some até o próximo sync).
+    const statuses = (fetch as ReturnType<typeof vi.fn>).mock.calls.filter((c) =>
+      String(c[0]).endsWith("/api/status"),
+    );
+    expect(statuses.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("limparCustos não faz nada sem configuração ou sem ids", async () => {
+    ipc.configLoad.mockResolvedValue({ guardian: { url: "", token: "" } });
+    await useGuardianStore.getState().carregar();
+
+    await useGuardianStore.getState().limparCustos(["acc-1"]);
+    expect(fetch).not.toHaveBeenCalled();
+
+    await useGuardianStore.getState().limparCustos([]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   /* ------------------- ordenação inteligente ------------------- */
 
   function conta(parcial: Partial<GuardianConta> & { id: string }): GuardianConta {

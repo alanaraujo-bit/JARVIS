@@ -216,6 +216,17 @@ export class Store {
   }
 
   /**
+   * Apaga o custo sincronizado da conta (limpeza manual/reset). O próximo
+   * sync do PC repõe sozinho — não é destrutivo para a conta em si.
+   */
+  clearCusto(id: string): void {
+    const a = this.accounts.get(id);
+    if (!a) throw new Error(`conta ${id} não existe`);
+    a.custo = null;
+    this.save();
+  }
+
+  /**
    * Re-criptografa as credenciais da conta. Usado após um ping, quando a CLI
    * rotaciona o token e reescreve o `.credentials.json` de trabalho — sem isto
    * o store guardaria um refresh token morto e a conta quebraria num redeploy.

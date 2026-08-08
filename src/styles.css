@@ -3527,6 +3527,13 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
+.guardian-secao-acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 .guardian-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3795,6 +3802,10 @@ select {
   font-size: var(--text-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+/* Custo desatualizado (> 24h sem o PC sincronizar): alerta, como no celular. */
+.guardian-custo-meta.velho {
+  color: var(--warn);
 }
 .guardian-custo-sem {
   margin: 0;

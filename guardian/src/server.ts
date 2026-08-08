@@ -10,6 +10,8 @@
  *   PATCH /api/accounts/:id        -> { enabled } ou { name }
  *   POST /api/accounts/:id/lease   -> heartbeat "estou usando esta conta" (JARVIS)
  *   POST /api/accounts/:id/ping    -> força um ping agora (teste/manual)
+ *   POST /api/accounts/:id/usage   -> custo real em $ sincronizado pelo PC
+ *   DELETE /api/accounts/:id/usage -> limpa o custo sincronizado (reset)
  *
  * Nenhuma rota devolve token: credenciais entram, nunca saem.
  */
@@ -121,13 +123,25 @@ export class ApiServer {
       }
 
       const mUso = rota.match(/^\/api\/accounts\/([^/]+)\/usage$/);
-      if (mUso && req.method === "POST") {
+      if (mUso && (req.method === "POST" || req.method === "DELETE")) {
+        const id = descodifica(mUso[1]);
+        if (req.method === "DELETE") {
+          // Limpeza manual: apaga o custo sincronizado (dados de teste ou
+          // errados). O próximo sync do PC repõe sozinho.
+          try {
+            this.store.clearCusto(id);
+            this.json(res, 200, { ok: true });
+          } catch (e) {
+            this.json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+          }
+          return;
+        }
         // Custo real vindo do JARVIS no PC (nunca exposto de volta). O
         // celular mostra na tela de estatísticas junto com a cota ao vivo.
         void this.lerJson(req).then((body) => {
           const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
           try {
-            this.store.setCusto(descodifica(mUso[1]), {
+            this.store.setCusto(id, {
               costTotalUsd: num(body?.costTotalUsd),
               costLast5hUsd: num(body?.costLast5hUsd),
               tokensLast5h: num(body?.tokensLast5h),

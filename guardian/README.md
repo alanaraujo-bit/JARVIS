@@ -46,6 +46,7 @@ Todas as rotas exigem `Authorization: Bearer <JARVIS_GUARDIAN_TOKEN>`
 | POST | `/api/accounts/:id/lease` | heartbeat "estou usando" (JARVIS, 2 min) |
 | POST | `/api/accounts/:id/ping` | força um ping no próximo ciclo |
 | POST | `/api/accounts/:id/usage` | custo real em $ que o JARVIS no PC sincroniza (alimenta a aba Custo do celular) |
+| DELETE | `/api/accounts/:id/usage` | limpa o custo sincronizado (reset manual — o próximo sync do PC repõe) |
 | GET | `/api/push/vapid` | chave pública VAPID (sem auth — o PWA precisa antes do token) |
 | POST | `/api/push/subscribe` | registra o aparelho `{ subscription }` para Web Push |
 | DELETE | `/api/push/subscribe` | remove o aparelho `{ endpoint }` |

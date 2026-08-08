@@ -1,7 +1,7 @@
 {
   "name": "jarvis",
   "private": true,
-  "version": "0.12.0",
+  "version": "0.13.0",
   "type": "module",
   "description": "JARVIS - central de terminais e agentes de IA para Windows",
   "scripts": {

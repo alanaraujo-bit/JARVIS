@@ -8,8 +8,8 @@
  *     mesmo com o app fechado e o PC desligado.
  */
 
-// v3: concha com abas (Janelas | Custo) e tela de estatísticas de gasto.
-const CACHE = "jarvis-guardian-v3";
+// v4: concha com aviso de custo desatualizado (âmbar após 24h sem o PC).
+const CACHE = "jarvis-guardian-v4";
 const CONCHA = ["/", "/index.html", "/manifest.webmanifest", "/icon-256.png", "/icon-512.png"];
 
 self.addEventListener("install", (ev) => {
