@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<!--
+  `maximum-scale=1` + `user-scalable=no`: app instalado não pode zoar —
+  é um dashboard, não uma página de leitura. `viewport-fit=cover` é o que
+  permite o conteúdo correr sob a barra de status com as margens seguras.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d12" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="JARVIS" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/icon-256.png" />
+<title>JARVIS · Janelas de Sessão</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --card: #141821;
+    --card-2: #1a1f2b;
+    --texto: #e6e9f0;
+    --texto-2: #8b93a7;
+    --roxo: #a78bfa;
+    --verde: #34d399;
+    --ambar: #fbbf24;
+    --vermelho: #f87171;
+    --borda: #232a3a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* `touch-action: manipulation` desliga o zoom duplo-toque (e o atraso de
+     300ms de espera por ele) em qualquer elemento tocável. */
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--texto);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    /* As margens seguras: com a barra de status translúcida do iPhone o
+       conteúdo corre sob ela — sem este padding, o relógio do sistema
+       (hora/bateria) taparia o cabeçalho. */
+    padding: calc(16px + env(safe-area-inset-top)) 16px calc(48px + env(safe-area-inset-bottom));
+    touch-action: manipulation;
+    overscroll-behavior-y: none;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 18px; letter-spacing: .5px; }
+  h1 span { color: var(--roxo); }
+  .relogio { color: var(--texto-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .aviso {
+    background: #2a1f0f;
+    border: 1px solid #57431a;
+    color: var(--ambar);
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  .push-card {
+    background: linear-gradient(135deg, #17142b, #141821);
+    border: 1px solid #2c2448;
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .push-card .icone {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    background: #241d45;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .push-card .texto { flex: 1; min-width: 0; }
+  .push-card .titulo { font-size: 13px; font-weight: 600; }
+  .push-card .sub { font-size: 11px; color: var(--texto-2); margin-top: 2px; }
+  .push-card button {
+    background: var(--roxo);
+    color: #120e24;
+    border: none;
+    border-radius: 99px;
+    padding: 8px 14px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .push-card button.ativo { background: #232a3a; color: var(--texto-2); }
+  .conta {
+    background: var(--card);
+    border: 1px solid var(--borda);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .conta.bloqueada { border-color: #57431a; }
+  .conta-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .conta-nome { font-weight: 600; font-size: 14px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip { font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; padding: 3px 7px; border-radius: 99px; }
+  .chip.ok { background: #0d2b20; color: var(--verde); }
+  .chip.travada { background: #3a2410; color: var(--ambar); }
+  .chip.erro { background: #3a1010; color: var(--vermelho); }
+  .chip.uso { background: #1e1b3a; color: var(--roxo); }
+  .janelas { display: grid; gap: 10px; margin-top: 10px; }
+  .janela .linha { display: flex; justify-content: space-between; font-size: 12px; color: var(--texto-2); margin-bottom: 4px; }
+  .barra { height: 6px; background: var(--card-2); border-radius: 99px; overflow: hidden; }
+  .barra i { display: block; height: 100%; border-radius: 99px; transition: width .6s ease; }
+  .barra .fh { background: linear-gradient(90deg, #7c6cf0, #a78bfa); }
+  .barra .sd { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 11px; color: var(--texto-2); }
+  .meta b { color: var(--texto); font-weight: 600; }
+  .rodape {
+    text-align: center;
+    color: var(--texto-2);
+    font-size: 11px;
+    margin-top: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .rodape button {
+    background: none;
+    border: 1px solid var(--borda);
+    color: var(--texto-2);
+    border-radius: 99px;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .rodape button:active { background: var(--card); }
+  .erro-tela { color: var(--vermelho); font-size: 13px; padding: 12px; background: var(--card); border-radius: 10px; border: 1px solid var(--borda); }
+  .atualizado { font-variant-numeric: tabular-nums; }
+
+  /* ---------- tela de token (substitui o prompt do navegador) ----------
+     Cobrir tudo com fundo da mesma cor do app faz a troca parecer um
+     fade de tela nativa, sem flash branco. */
+  .token-tela {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
+  }
+  .token-tela[hidden] { display: none; }
+  .token-caixa {
+    width: 100%;
+    max-width: 340px;
+    background: var(--card);
+    border: 1px solid var(--borda);
+    border-radius: 18px;
+    padding: 24px 20px;
+    text-align: center;
+  }
+  .token-logo {
+    width: 52px; height: 52px;
+    margin: 0 auto 12px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #241d45, #17142b);
+    border: 1px solid #2c2448;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+  }
+  .token-caixa h2 { font-size: 16px; letter-spacing: .4px; }
+  .token-caixa p { font-size: 12px; color: var(--texto-2); margin: 6px 0 14px; line-height: 1.5; }
+  .token-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    color: var(--texto);
+    font-family: inherit;
+    font-size: 14px;
+    padding: 12px 14px;
+    outline: none;
+    text-align: center;
+  }
+  .token-input:focus { border-color: var(--roxo); }
+  .token-btn {
+    width: 100%;
+    margin-top: 12px;
+    background: var(--roxo);
+    color: #120e24;
+    border: none;
+    border-radius: 10px;
+    padding: 12px;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .token-btn:active { opacity: .85; }
+  .token-erro { margin-top: 10px; font-size: 12px; color: var(--vermelho); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>JARVIS <span>· Janelas</span></h1>
+    <div class="relogio" id="relogio">—</div>
+  </header>
+
+  <div class="push-card" id="push-card" style="display:none">
+    <div class="icone">🔔</div>
+    <div class="texto">
+      <div class="titulo" id="push-titulo">Notificações</div>
+      <div class="sub" id="push-sub">Avise quando uma conta liberar ou travar.</div>
+    </div>
+    <button id="push-btn">Ativar</button>
+  </div>
+
+  <div id="lista"></div>
+  <div class="rodape">
+    <span>Guardião · <span class="atualizado" id="atualizado">atualiza sozinho</span></span>
+    <button id="sair-token" hidden>sair</button>
+  </div>
+
+  <!-- Tela de token: só aparece quando não há token salvo (ou ao sair). -->
+  <div class="token-tela" id="token-tela" hidden>
+    <div class="token-caixa">
+      <div class="token-logo">🛡️</div>
+      <h2>Guardião JARVIS</h2>
+      <p>Digite o token do serviço para acompanhar as janelas de cota das suas contas.</p>
+      <input class="token-input" id="token-input" type="password" placeholder="JARVIS_GUARDIAN_TOKEN"
+             autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <button class="token-btn" id="token-btn">Entrar</button>
+      <div class="token-erro" id="token-erro" hidden></div>
+    </div>
+  </div>
+
+<script>
+const TOKEN_KEY = "jarvis.guardian.token";
+const CACHE_KEY = "jarvis.guardian.cache";
+let token = localStorage.getItem(TOKEN_KEY) || "";
+
+const $lista = document.getElementById("lista");
+const $relogio = document.getElementById("relogio");
+const $atualizado = document.getElementById("atualizado");
+const $pushCard = document.getElementById("push-card");
+const $pushTitulo = document.getElementById("push-titulo");
+const $pushSub = document.getElementById("push-sub");
+const $pushBtn = document.getElementById("push-btn");
+const $tokenTela = document.getElementById("token-tela");
+const $tokenInput = document.getElementById("token-input");
+const $tokenBtn = document.getElementById("token-btn");
+const $tokenErro = document.getElementById("token-erro");
+const $sairBtn = document.getElementById("sair-token");
+let dados = null;
+
+function fmtTempo(ms) {
+  if (ms == null || !isFinite(ms)) return "—";
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}min`;
+  return `${m}min`;
+}
+function fmtData(ms) {
+  if (!ms) return "—";
+  const d = new Date(ms);
+  const diff = d - new Date();
+  if (diff <= 0) return "agora";
+  return `${fmtTempo(diff)} (${d.toLocaleTimeString("pt-BR")})`;
+}
+function pct(u) { return u == null ? null : Math.max(0, Math.min(100, u)); }
+
+/* ---------------------- ordenação inteligente -------------------------
+   Como o usuário decide qual conta pegar: disponível agora primeiro,
+   depois as que estão liberando (quem reseta antes fica acima), e as
+   travadas/pausadas sempre no fim. Menor chave = mais acima. */
+function chaveOrdem(c) {
+  const e = c.estado || {};
+  const fh = e.cota?.fiveHour || null;
+  if (e.bloqueadaMensal) return [5, 0, 0];
+  if (e.bloqueadaSemanal) return [4, 0, 0];
+  if (c.enabled === false) return [3, 0, 0];
+  if (!fh || fh.utilization == null) return [2, 0, 0];
+  // Esgotada SEM hora de reset não é "liberando em breve" — é desconhecido.
+  if (fh.utilization >= 100) {
+    if (!fh.resetsAtMs) return [2, 0, 0];
+    return [1, fh.resetsAtMs, 0];
+  }
+  return [0, fh.utilization, fh.resetsAtMs || 0];
+}
+function comparaOrdem(a, b) {
+  const ka = chaveOrdem(a), kb = chaveOrdem(b);
+  for (let i = 0; i < 3; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+  return 0;
+}
+
+function chip(c) {
+  if (c.estado.bloqueadaSemanal || c.estado.bloqueadaMensal) return '<span class="chip travada">travada</span>';
+  if (c.estado.leaseAtivo) return '<span class="chip uso">em uso</span>';
+  const fh = c.estado.cota?.fiveHour;
+  if (c.estado.cota && !c.estado.cota.ok) return '<span class="chip erro">sem cota</span>';
+  if (fh && fh.utilization !== null && fh.utilization >= 100) return '<span class="chip erro">no limite 5h</span>';
+  if (fh && (fh.utilization === 0 || fh.resetsAtMs == null)) return '<span class="chip ok">sem janela</span>';
+  return '<span class="chip ok">ok</span>';
+}
+
+function render() {
+  if (!dados) return;
+  const agora = dados.agora || Date.now();
+  $relogio.textContent = new Date(agora).toLocaleString("pt-BR");
+  const contas = [...(dados.contas || [])].sort(comparaOrdem);
+  if (contas.length === 0) {
+    $lista.innerHTML = '<div class="aviso">Nenhuma conta cadastrada ainda. Cadastre pelo painel do JARVIS (ou via API).</div>';
+    return;
+  }
+  $lista.innerHTML = contas.map((c) => {
+    const e = c.estado || {};
+    const fh = e.cota?.fiveHour || null;
+    const sd = e.cota?.sevenDay || null;
+    const proxima = e.proximaAcaoEm ? (e.proximaAcaoEm - agora) : null;
+    const ultimoPing = e.ultimoPing ? new Date(e.ultimoPing).toLocaleTimeString("pt-BR") : "nunca";
+    const classe = (e.bloqueadaSemanal || e.bloqueadaMensal) ? " bloqueada" : "";
+    const semjanela = fh && (fh.utilization === 0 || fh.resetsAtMs == null);
+    return `<div class="conta${classe}">
+      <div class="conta-head">
+        <span class="conta-nome">${esc(c.name)}</span>
+        ${chip(c)}
+      </div>
+      <div class="janelas">
+        <div class="janela">
+          <div class="linha"><span>Janela 5h</span>
+            <span>${semjanela ? "ociosa — sem janela" : `reset em <b>${fmtData(fh?.resetsAtMs)}</b>`}</span>
+          </div>
+          <div class="barra"><i class="fh" style="width:${pct(fh?.utilization) ?? 0}%"></i></div>
+        </div>
+        <div class="janela">
+          <div class="linha"><span>Janela 7 dias</span><span>${fmtData(sd?.resetsAtMs)}</span></div>
+          <div class="barra"><i class="sd" style="width:${pct(sd?.utilization) ?? 0}%"></i></div>
+        </div>
+      </div>
+      <div class="meta">
+        <span>último oi: <b>${ultimoPing}</b></span>
+        <span>pings ok: <b>${e.pingsOk ?? 0}</b> / falhas: <b>${e.pingsFail ?? 0}</b></span>
+        <span>próx. ação: <b>${proxima != null && proxima > 0 ? fmtTempo(proxima) : "agora"}</b></span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ------------------------- token: pede uma vez só ------------------------ */
+
+function mostrarTelaToken(mensagem) {
+  $tokenTela.hidden = false;
+  $tokenErro.hidden = !mensagem;
+  if (mensagem) $tokenErro.textContent = mensagem;
+  window.setTimeout(() => $tokenInput.focus(), 50);
+}
+
+function entrar() {
+  const t = $tokenInput.value.trim();
+  if (t.length < 8) {
+    $tokenErro.hidden = false;
+    $tokenErro.textContent = "O token parece curto demais — confira no Railway.";
+    return;
+  }
+  token = t;
+  localStorage.setItem(TOKEN_KEY, t);
+  $tokenTela.hidden = true;
+  $sairBtn.hidden = false;
+  $tokenInput.value = "";
+  carregar();
+}
+
+$tokenBtn.addEventListener("click", entrar);
+$tokenInput.addEventListener("keydown", (e) => { if (e.key === "Enter") entrar(); });
+
+$sairBtn.addEventListener("click", () => {
+  localStorage.removeItem(TOKEN_KEY);
+  token = "";
+  dados = null;
+  $lista.innerHTML = "";
+  $sairBtn.hidden = true;
+  mostrarTelaToken();
+});
+
+/* ----------------------- abertura instantânea ----------------------------
+   O último estado conhecido mora no localStorage: na abertura ele é pintado
+   no mesmo quadro (sem esperar a rede) e a atualização chega logo atrás. */
+try {
+  const guardado = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+  if (guardado && guardado.dados && Array.isArray(guardado.dados.contas)) {
+    dados = guardado.dados;
+    render();
+    $atualizado.textContent = `atualizado ${new Date(guardado.em || Date.now()).toLocaleTimeString("pt-BR")}`;
+  }
+} catch { /* cache corrompido: segue sem ele */ }
+
+async function carregar() {
+  if (!token) { mostrarTelaToken(); return; }
+  try {
+    const res = await fetch("/api/status", { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) {
+      // Token velho/errado: pede de novo, sem derrubar o que já está na tela.
+      localStorage.removeItem(TOKEN_KEY);
+      mostrarTelaToken("Token inválido — digite novamente.");
+      return;
+    }
+    dados = await res.json();
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ em: Date.now(), dados }));
+    render();
+    $atualizado.textContent = `atualizado ${new Date().toLocaleTimeString("pt-BR")}`;
+  } catch (e) {
+    // Sem rede: mantém o que já está pintado (do cache) e avisa no rodapé.
+    if (!dados) {
+      $lista.innerHTML = `<div class="erro-tela">Sem conexão com o guardião: ${esc(e.message)}</div>`;
+    } else {
+      $atualizado.textContent = "offline — mostrando o último estado";
+    }
+  }
+}
+
+/* ------------------------------- push ------------------------------- */
+
+const pushSuportado = "serviceWorker" in navigator && "PushManager" in window;
+
+async function estadoPush() {
+  if (!pushSuportado) return;
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  const ativo = !!sub;
+  $pushCard.style.display = "flex";
+  $pushTitulo.textContent = ativo ? "Notificações ativas" : "Ativar notificações";
+  $pushSub.textContent = ativo
+    ? "Você será avisado quando uma conta liberar ou travar."
+    : "Instale o app e receba avisos mesmo com o PC desligado.";
+  $pushBtn.textContent = ativo ? "Desativar" : "Ativar";
+  $pushBtn.classList.toggle("ativo", ativo);
+  $pushBtn.onclick = () => (ativo ? desativarPush(reg, sub) : ativarPush(reg));
+}
+
+async function ativarPush(reg) {
+  try {
+    const permissoes = await Notification.requestPermission();
+    if (permissoes !== "granted") {
+      $pushSub.textContent = "Permissão negada — libere as notificações nas configurações do navegador.";
+      return;
+    }
+    const res = await fetch("/api/push/vapid");
+    const { publicKey } = await res.json();
+    if (!publicKey) throw new Error("guardião sem chave VAPID configurada");
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ParaUint8(publicKey),
+    });
+    const corpo = { subscription: sub.toJSON() };
+    const resp = await fetch("/api/push/subscribe", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(corpo),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    await estadoPush();
+  } catch (e) {
+    $pushSub.textContent = `Não consegui ativar: ${e.message}`;
+  }
+}
+
+async function desativarPush(reg, sub) {
+  try {
+    await fetch("/api/push/subscribe", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint }),
+    });
+    await sub.unsubscribe();
+  } catch { /* já sai do estado mesmo sem resposta */ }
+  await estadoPush();
+}
+
+function urlBase64ParaUint8(base64) {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const base64ok = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64ok);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+/* ------------------------------- boot ------------------------------- */
+
+$sairBtn.hidden = !token;
+if (token) {
+  carregar();
+  setInterval(carregar, 10_000);
+} else {
+  mostrarTelaToken();
+}
+
+if (pushSuportado) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  navigator.serviceWorker.ready.then(estadoPush);
+}
+</script>
+</body>
+</html>

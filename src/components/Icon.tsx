@@ -61,6 +61,7 @@ export type IconName =
   | "history"
   | "home"
   | "logo"
+  | "shield"
   | "mic"
   | "pwsh"
   | "cmd"
@@ -265,6 +266,14 @@ const paths: Record<IconName, React.ReactNode> = {
       <ellipse cx="12" cy="6.8" rx="7" ry="2.9" />
       <path d="M5 6.8v10.4c0 1.6 3.1 2.9 7 2.9s7-1.3 7-2.9V6.8" />
       <path d="M5 12c0 1.6 3.1 2.9 7 2.9s7-1.3 7-2.9" />
+    </>
+  ),
+  /* Escudo do guardião: proteção + um pulso de atividade no meio — o
+     serviço que vela pelas janelas de uso das contas. */
+  shield: (
+    <>
+      <path d="M12 3.4 19 6v5.8c0 4.3-2.9 7.6-7 8.8-4.1-1.2-7-4.5-7-8.8V6l7-2.6Z" />
+      <path d="M8.4 12 11 14.6l4.6-5" />
     </>
   ),
   pencil: (

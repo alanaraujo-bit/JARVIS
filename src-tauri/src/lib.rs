@@ -98,6 +98,7 @@ pub fn run() {
             commands::claude_account_prepare,
             commands::claude_accounts_status,
             commands::claude_account_import,
+            commands::claude_account_credentials,
             commands::claude_account_logout,
             commands::claude_account_forget,
             commands::claude_default_login_exists,

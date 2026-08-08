@@ -27,6 +27,7 @@ export type RailDest =
   | "stats"
   | "history"
   | "accounts"
+  | "guardian"
   | "settings"
   | "profile";
 
@@ -95,6 +96,13 @@ const ITENS: Item[] = [
     icon: "coins",
     label: "Contas",
     hint: "Contas do Claude Code",
+    group: "sistema",
+  },
+  {
+    dest: "guardian",
+    icon: "shield",
+    label: "Guardião",
+    hint: "Janelas de uso 24/7",
     group: "sistema",
   },
   {

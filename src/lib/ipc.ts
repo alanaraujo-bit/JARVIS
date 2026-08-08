@@ -288,6 +288,12 @@ export interface UiConfigPayload {
   onboardingDone: boolean;
 }
 
+/** Espelho de `GuardianConfig` em `src-tauri/src/config.rs`. */
+export interface GuardianConfigPayload {
+  url: string;
+  token: string;
+}
+
 export interface AppConfig {
   workspaces: WorkspaceConfigPayload[];
   activeWorkspaceId: string | null;
@@ -304,6 +310,8 @@ export interface AppConfig {
   claudeAccounts: ClaudeAccountPayload[];
   /** Conta usada por terminais que não herdam nada de um workspace. */
   defaultClaudeAccountId: string | null;
+  /** Conexão com o guardião 24/7 (endereço + token da API). */
+  guardian: GuardianConfigPayload;
 }
 
 /**
@@ -557,6 +565,15 @@ export const claudeUsageByAccount = (accounts: [string, string][]) =>
 /** Copia para a conta o login que já existe em `~/.claude`. */
 export const claudeAccountImport = (id: string) =>
   invoke<void>("claude_account_import", { id });
+
+/**
+ * O `.credentials.json` cru de uma conta, para o cadastro em um clique no
+ * guardião 24/7. `null` = conta sem login (o painel pede login antes).
+ * É a única leitura de credencial que atravessa o IPC, e vai direto para o
+ * guardião, que criptografa em repouso — nunca aparece na interface.
+ */
+export const claudeAccountCredentials = (id: string) =>
+  invoke<string | null>("claude_account_credentials", { id });
 
 /** Sai da conta, preservando preferências e histórico dela. */
 export const claudeAccountLogout = (id: string) =>

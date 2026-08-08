@@ -216,6 +216,26 @@ impl Default for UiConfig {
     }
 }
 
+/// Conexão com o guardião 24/7 (Claude Session Window Manager).
+///
+/// O guardião roda num servidor (Railway) e mantém as janelas de 5h das
+/// contas sempre rolando com pings de "oi". O que mora aqui é o endereço do
+/// serviço e o token da API dele — o mesmo que o painel do JARVIS e o PWA do
+/// celular usam. O token é sensível (dá acesso à administração das contas no
+/// guardião), mas o config.json do JARVIS já guarda a chave da IA em texto
+/// puro; a diferença é que este nunca sai para a interface de outra forma que
+/// não o campo de edição do próprio painel.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GuardianConfig {
+    /// Base URL do serviço (ex.: `https://jarvis-guardian-production.up.railway.app`).
+    #[serde(default)]
+    pub url: String,
+    /// Token `JARVIS_GUARDIAN_TOKEN` da API REST.
+    #[serde(default)]
+    pub token: String,
+}
+
 /// Descarta só as entradas malformadas, em vez de rejeitar a lista inteira.
 ///
 /// Um workspace sem `path` (campo sem `default`, obrigatório de propósito —
@@ -273,6 +293,11 @@ pub struct AppConfig {
     /// Conta usada por terminais que não herdam nada de um workspace.
     #[serde(default)]
     pub default_claude_account_id: Option<String>,
+    /// Conexão com o guardião 24/7 (painel do JARVIS). `Default` cobre o
+    /// config de quem nunca abriu o painel — o guardião nasce "não
+    /// configurado", o que é o estado correto para quem não o usa.
+    #[serde(default)]
+    pub guardian: GuardianConfig,
 }
 
 /// Mesma lógica de `workspaces_tolerantes`, para a lista de contas.
@@ -321,6 +346,11 @@ pub struct ConfigPatch {
     /// pedido explícito de "voltar a não ter conta padrão".
     #[serde(default, deserialize_with = "double_option")]
     pub default_claude_account_id: Option<Option<String>>,
+    /// Bloco inteiro, e não campo a campo: o painel do guardião é dono
+    /// exclusivo das duas coisas (URL e token) e salvá-las sempre juntas
+    /// evita um estado intermediário com URL nova e token velho.
+    #[serde(default)]
+    pub guardian: Option<GuardianConfig>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -369,6 +399,9 @@ impl AppConfig {
         }
         if let Some(d) = patch.default_claude_account_id {
             self.default_claude_account_id = d;
+        }
+        if let Some(g) = patch.guardian {
+            self.guardian = g;
         }
         if let Some(ui) = patch.ui {
             if let Some(v) = ui.sidebar_open {
@@ -600,5 +633,27 @@ mod tests {
         let livre: ConfigPatch = serde_json::from_str(r#"{"activeWorkspaceId":null}"#).unwrap();
         cfg.apply(livre);
         assert_eq!(cfg.active_workspace_id, None);
+    }
+
+    #[test]
+    fn patch_do_guardiao_atualiza_url_e_token_juntos() {
+        let mut cfg = AppConfig::default();
+
+        let patch: ConfigPatch =
+            serde_json::from_str(r#"{"guardian":{"url":"https://guardian.test","token":"abc123"}}"#)
+                .unwrap();
+        cfg.apply(patch);
+
+        assert_eq!(cfg.guardian.url, "https://guardian.test");
+        assert_eq!(cfg.guardian.token, "abc123");
+    }
+
+    #[test]
+    fn config_sem_guardian_carrega_desconectado() {
+        // Config escrito antes da Fase 2: sem o campo, não pode falhar.
+        let antigo = r##"{"workspaces":[]}"##;
+        let cfg: AppConfig = serde_json::from_str(antigo).unwrap();
+        assert_eq!(cfg.guardian.url, "");
+        assert_eq!(cfg.guardian.token, "");
     }
 }

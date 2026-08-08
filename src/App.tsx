@@ -10,6 +10,7 @@ import { HistoryPanel } from "./components/HistoryPanel";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { UpdatePanel } from "./components/UpdatePanel";
 import { AccountsPanel } from "./components/AccountsPanel";
+import { GuardianPanel } from "./components/GuardianPanel";
 import { NavRail, type RailDest } from "./components/NavRail";
 import { CollabScreen } from "./components/CollabScreen";
 import { GuestWorkspace } from "./components/GuestWorkspace";
@@ -24,6 +25,7 @@ import { useNotesStore } from "./stores/notesStore";
 import { useUiStore } from "./stores/uiStore";
 import { useUpdateStore } from "./stores/updateStore";
 import { useAccountStore } from "./stores/accountStore";
+import { useGuardianStore } from "./stores/guardianStore";
 import { useCollabStore } from "./stores/collabStore";
 import { onCollabAiAsk } from "./lib/collabIpc";
 import { Icon, shellIcon } from "./components/Icon";
@@ -177,6 +179,11 @@ export default function App() {
   const abrirPainelContas = useAccountStore((s) => s.abrirPainel);
   const fecharPainelContas = useAccountStore((s) => s.fecharPainel);
 
+  const guardianPainelAberto = useGuardianStore((s) => s.painelAberto);
+  const abrirPainelGuardian = useGuardianStore((s) => s.abrirPainel);
+  const fecharPainelGuardian = useGuardianStore((s) => s.fecharPainel);
+  const carregarGuardian = useGuardianStore((s) => s.carregar);
+
   const updateFase = useUpdateStore((s) => s.fase);
   const updatePainelAberto = useUpdateStore((s) => s.painelAberto);
   const abrirPainelUpdate = useUpdateStore((s) => s.abrirPainel);
@@ -251,6 +258,7 @@ export default function App() {
         (dest === "stats" && statsOpen) ||
         (dest === "history" && historyOpen) ||
         (dest === "accounts" && contasPainelAberto) ||
+        (dest === "guardian" && guardianPainelAberto) ||
         (dest === "settings" && settingsOpen) ||
         (dest === "profile" && profileOpen);
 
@@ -260,6 +268,7 @@ export default function App() {
         setHistoryOpen(false);
         fecharPainelUpdate();
         fecharPainelContas();
+        fecharPainelGuardian();
         fecharTelas();
         fecharCollab();
       }
@@ -283,6 +292,10 @@ export default function App() {
           if (eraAtiva) fecharPainelContas();
           else abrirPainelContas();
           break;
+        case "guardian":
+          if (eraAtiva) fecharPainelGuardian();
+          else abrirPainelGuardian();
+          break;
         case "settings":
           setSettingsOpen(!eraAtiva);
           break;
@@ -303,10 +316,12 @@ export default function App() {
       statsOpen,
       historyOpen,
       contasPainelAberto,
+      guardianPainelAberto,
       settingsOpen,
       profileOpen,
       fecharPainelUpdate,
       fecharPainelContas,
+      fecharPainelGuardian,
       fecharTelas,
     ],
   );
@@ -399,6 +414,7 @@ export default function App() {
     void loadWorkspaces();
     void loadAiConfig();
     void carregarContas();
+    void carregarGuardian();
 
     if (reconciledRef.current) return;
     reconciledRef.current = true;
@@ -616,7 +632,13 @@ export default function App() {
       // Guardado por SESSÃO, e não por aba: um split herda a conta do
       // terminal que o gerou, e uma aba com dois painéis pode legitimamente
       // ter duas contas diferentes.
-      if (conta) setSessionAccounts((prev) => ({ ...prev, [info.id]: conta.id }));
+      if (conta) {
+        setSessionAccounts((prev) => ({ ...prev, [info.id]: conta.id }));
+        // O guardião precisa saber já: um terminal que acabou de nascer numa
+        // conta é uso em andamento, e o lease imediato evita que ele pingue
+        // a conta no primeiro ciclo do agendador.
+        void useGuardianStore.getState().sinalizarUso([conta.id]);
+      }
 
       historyRef.current = [
         ...historyRef.current,
@@ -1134,6 +1156,36 @@ export default function App() {
   const captureAiContextRef = useRef(captureAiContext);
   captureAiContextRef.current = captureAiContext;
 
+  /**
+   * Contas com terminal vivo agora — o que o heartbeat do guardião precisa
+   * saber. Espelhado em ref (como `tabsRef`) para o intervalo usar o valor
+   * mais recente sem se recriar a cada mudança de sessão.
+   */
+  const contasEmUsoRef = useRef<Set<string>>(new Set());
+  contasEmUsoRef.current = (() => {
+    const ids = new Set<string>();
+    for (const s of Object.values(sessions)) {
+      if (!s.alive) continue;
+      const acc = sessionAccounts[s.id];
+      if (acc) ids.add(acc);
+    }
+    return ids;
+  })();
+
+  /**
+   * Heartbeat do guardião: a cada minuto, renova o lease das contas em uso
+   * (o lease do guardião dura 2 min, então há sempre folga). É isso que faz
+   * o guardião respeitar o uso real e não mandar "oi" numa conta que você
+   * está usando agora.
+   */
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      const ids = [...contasEmUsoRef.current];
+      if (ids.length > 0) void useGuardianStore.getState().sinalizarUso(ids);
+    }, 60_000);
+    return () => window.clearInterval(t);
+  }, []);
+
   /* ---------------------------- atalhos -------------------------------- */
 
   const shortcutActions = useMemo(
@@ -1206,18 +1258,21 @@ export default function App() {
       togglePalette: () => {
         setStatsOpen(false);
         setHistoryOpen(false);
+        fecharPainelGuardian();
         fecharTelas();
         setPaletteOpen((v) => !v);
       },
       toggleStats: () => {
         setPaletteOpen(false);
         setHistoryOpen(false);
+        fecharPainelGuardian();
         fecharTelas();
         setStatsOpen((v) => !v);
       },
       toggleHistory: () => {
         setPaletteOpen(false);
         setStatsOpen(false);
+        fecharPainelGuardian();
         fecharTelas();
         setHistoryOpen((v) => !v);
       },
@@ -1234,6 +1289,7 @@ export default function App() {
       toggleAiPanel,
       toggleNotes,
       clearAiMessages,
+      fecharPainelGuardian,
       fecharTelas,
     ],
   );
@@ -1252,6 +1308,7 @@ export default function App() {
       !profileOpen &&
       !updatePainelAberto &&
       !contasPainelAberto &&
+      !guardianPainelAberto &&
       !collabOpen
     )
       return;
@@ -1265,6 +1322,7 @@ export default function App() {
       fecharTelas();
       fecharPainelUpdate();
       fecharPainelContas();
+      fecharPainelGuardian();
       fecharCollab();
     };
     window.addEventListener("keydown", onKey, { capture: true });
@@ -1277,11 +1335,13 @@ export default function App() {
     profileOpen,
     updatePainelAberto,
     contasPainelAberto,
+    guardianPainelAberto,
     collabOpen,
     fecharCollab,
     fecharTelas,
     fecharPainelUpdate,
     fecharPainelContas,
+    fecharPainelGuardian,
   ]);
 
   /**
@@ -1448,8 +1508,23 @@ export default function App() {
           setPaletteOpen(false);
           setStatsOpen(false);
           setHistoryOpen(false);
+          fecharPainelGuardian();
           fecharTelas();
           abrirPainelContas();
+        },
+      },
+      {
+        id: "app.guardian",
+        title: "Guardião — janelas de uso 24/7",
+        group: "Aplicativo",
+        keywords: "guardiao guardian janela uso 5h reset cota claude pings servidor railway",
+        run: () => {
+          setPaletteOpen(false);
+          setStatsOpen(false);
+          setHistoryOpen(false);
+          fecharPainelContas();
+          fecharTelas();
+          abrirPainelGuardian();
         },
       },
       {
@@ -1462,6 +1537,8 @@ export default function App() {
           // backdrop de uma come os cliques da outra.
           setPaletteOpen(false);
           setStatsOpen(false);
+          fecharPainelContas();
+          fecharPainelGuardian();
           fecharTelas();
           abrirPainelUpdate();
         },
@@ -1475,6 +1552,8 @@ export default function App() {
         run: () => {
           setPaletteOpen(false);
           setStatsOpen(false);
+          fecharPainelContas();
+          fecharPainelGuardian();
           fecharTelas();
           setHistoryOpen(true);
         },
@@ -1486,6 +1565,8 @@ export default function App() {
         shortcut: "Ctrl+Shift+S",
         keywords: "dashboard numeros bytes",
         run: () => {
+          fecharPainelContas();
+          fecharPainelGuardian();
           fecharTelas();
           setStatsOpen(true);
         },
@@ -1500,6 +1581,7 @@ export default function App() {
           setStatsOpen(false);
           setHistoryOpen(false);
           fecharPainelContas();
+          fecharPainelGuardian();
           setProfileOpen(false);
           setSettingsOpen(true);
         },
@@ -1514,6 +1596,7 @@ export default function App() {
           setStatsOpen(false);
           setHistoryOpen(false);
           fecharPainelContas();
+          fecharPainelGuardian();
           setSettingsOpen(false);
           setProfileOpen(true);
         },
@@ -1671,6 +1754,8 @@ export default function App() {
     contaEscolhidaId,
     escolherConta,
     abrirPainelContas,
+    abrirPainelGuardian,
+    fecharPainelGuardian,
     fecharTelas,
   ]);
 
@@ -1760,11 +1845,13 @@ export default function App() {
       ? "profile"
       : contasPainelAberto
         ? "accounts"
-        : statsOpen
-          ? "stats"
-          : historyOpen
-            ? "history"
-            : "home";
+        : guardianPainelAberto
+          ? "guardian"
+          : statsOpen
+            ? "stats"
+            : historyOpen
+              ? "history"
+              : "home";
 
   return (
     <div
@@ -2127,6 +2214,7 @@ export default function App() {
       />
       <UpdatePanel />
       <AccountsPanel onEntrar={(c) => void entrarNaConta(c)} />
+      <GuardianPanel onEntrar={(c) => void entrarNaConta(c)} />
       <SettingsScreen
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}

@@ -12,9 +12,12 @@
 //! que faz sentido copiar da configuração principal — sem isso, cada conta
 //! nova começaria sem as instruções e preferências que o usuário já tinha.
 //!
-//! Este módulo nunca devolve token nenhum para o front. O que ele lê do
-//! `.credentials.json` são os campos de *estado* (tipo de assinatura, quando
-//! expira); os campos de credencial ficam onde estão.
+//! Este módulo nunca devolve token nenhum para o front — com uma exceção
+//! deliberada, `credentials()`, que lê o `.credentials.json` cru para o
+//! cadastro em um clique no guardião 24/7 (o serviço que mantém as janelas
+//! de 5h rolando). Tudo o mais que este módulo lê do arquivo são os campos
+//! de *estado* (tipo de assinatura, quando expira); os campos de credencial
+//! ficam onde estão.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -262,6 +265,34 @@ pub fn migrate_session(
 pub fn status(id: &str) -> Result<AccountStatus> {
     let dir = account_dir(id)?;
     Ok(status_do_dir(id, &dir))
+}
+
+/// Lê o `.credentials.json` cru de uma conta — o conteúdo que o guardião
+/// 24/7 precisa para pingar por conta própria (cadastro em um clique no
+/// painel).
+///
+/// É a única exceção à regra "este módulo nunca devolve token para o front",
+/// e ela é deliberada: sem as credenciais atravessando o IPC, o usuário teria
+/// que copiar o arquivo na mão e colar no painel. O destino é o guardião do
+/// próprio usuário, que criptografa em repouso e nunca expõe o token de volta.
+///
+/// Devolve `None` quando a conta não existe ou não tem login — cadastrar uma
+/// conta deslogada no guardião faria todo ping falhar com "não autenticado".
+pub fn credentials(id: &str) -> Result<Option<String>> {
+    let dir = account_dir(id)?;
+    let arquivo = dir.join(".credentials.json");
+    if !arquivo.is_file() {
+        return Ok(None);
+    }
+    let conteudo = fs::read_to_string(&arquivo)
+        .map_err(|e| JarvisError::ConfigIo(format!("não consegui ler as credenciais de {id}: {e}")))?;
+    // Só credenciais que se parecem com o que a CLI escreve: um arquivo
+    // vazio ou inválido iria para o guardião e o primeiro ping falharia sem
+    // que ninguém percebesse onde.
+    if conteudo.trim().is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(conteudo))
 }
 
 fn status_do_dir(id: &str, dir: &Path) -> AccountStatus {

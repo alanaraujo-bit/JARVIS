@@ -3484,6 +3484,214 @@ select {
   display: block;
 }
 
+/* ======================= guardião — janelas de uso ====================== */
+
+.guardian-panel {
+  width: min(720px, 94vw);
+}
+
+.guardian-titulo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--accent);
+}
+
+.guardian-secao {
+  padding: var(--space-5) var(--space-6);
+}
+
+.guardian-secao + .guardian-secao {
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.guardian-secao-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.guardian-secao-titulo {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+
+.guardian-contagem {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.guardian-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  align-items: end;
+}
+
+@media (max-width: 640px) {
+  .guardian-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+.guardian-campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.guardian-campo > span {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-weight: var(--weight-medium);
+}
+
+.guard-input {
+  width: 100%;
+  background: var(--bg);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-fluid);
+}
+
+.guard-input:focus {
+  border-color: var(--accent);
+}
+
+.guardian-form-acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.guardian-atualizado {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.guardian-vazio {
+  margin: 0;
+  padding: var(--space-5) var(--space-6);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+}
+
+.guardian-vazio code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.guardian-lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guardian-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface-2);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.guardian-item-cab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.guardian-item-nome {
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guardian-item-estado {
+  margin-left: auto;
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  background: var(--surface-3);
+  color: var(--text-muted);
+}
+
+.guardian-item-detalhes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.guardian-metrica {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.guardian-metrica-rotulo {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  color: var(--text-faint);
+}
+
+.guardian-metrica-valor {
+  font-size: var(--text-md);
+  font-weight: var(--weight-strong);
+  color: var(--text);
+}
+
+.guardian-metrica-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.guardian-metrica.atencao .guardian-metrica-valor {
+  color: var(--warn);
+}
+
+.guardian-metrica.cheia .guardian-metrica-valor {
+  color: var(--danger);
+}
+
+.guardian-item-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+}
+
+.guardian-item-acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 .accounts-lista {
   display: flex;
   flex-direction: column;

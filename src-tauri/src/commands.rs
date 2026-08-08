@@ -428,6 +428,14 @@ pub fn claude_account_import(id: String) -> Result<()> {
     crate::claude_accounts::import_credentials(&id)
 }
 
+/// O `.credentials.json` cru de uma conta, para cadastrar a conta no
+/// guardião 24/7 sem digitar nada. `None` = conta sem login — a interface
+/// manda a pessoa fazer login antes.
+#[tauri::command(async)]
+pub fn claude_account_credentials(id: String) -> Result<Option<String>> {
+    crate::claude_accounts::credentials(&id)
+}
+
 /// Sai da conta sem apagar preferências nem histórico.
 #[tauri::command(async)]
 pub fn claude_account_logout(id: String) -> Result<()> {
