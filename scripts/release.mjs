@@ -54,9 +54,14 @@ for (const [nome, caminho] of [["instalador", exe], ["assinatura", sig]]) {
   }
 }
 
+// Notas podem vir com `\n` literal (shell/CMD) ou com quebras reais — as
+// duas viram quebras de verdade no `latest.json`, senão o painel de
+// atualizações mostra tudo numa linha só.
+const notas = (process.argv[2] ?? `JARVIS ${versao}`).replaceAll("\\n", "\n");
+
 const manifesto = {
   version: versao,
-  notes: process.argv[2] ?? `JARVIS ${versao}`,
+  notes: notas,
   pub_date: new Date().toISOString(),
   platforms: {
     "windows-x86_64": {
@@ -75,4 +80,4 @@ console.log(`gh release create v${versao} \\
   "${exe}" \\
   "${sig}" \\
   "${destino}" \\
-  --title "JARVIS v${versao}" --notes "${manifesto.notes}"`);
+  --title "JARVIS v${versao}" --notes "${notas}"`);
