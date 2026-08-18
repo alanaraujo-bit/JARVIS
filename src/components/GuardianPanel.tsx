@@ -450,6 +450,7 @@ function rotuloEstado(g: GuardianConta, agora: number): string {
   if (!g.enabled) return "pausada";
   if (e.bloqueadaSemanal) return "travada no limite semanal";
   if (e.bloqueadaMensal) return "travada no limite mensal";
+  if (e.cota && !e.cota.ok) return "cota indisponível";
   const fh = e.cota?.fiveHour;
   if (!fh) return "classificando…";
   const pct = fh.utilization ?? 0;
@@ -582,6 +583,10 @@ function CustoRanking({
 function metaDaConta(g: GuardianConta, agora: number): string {
   const e = g.estado;
   const partes: string[] = [];
+  // Cota quebrada: mostra o motivo que o guardião devolveu (sessão, 429, rede).
+  if (e.cota && !e.cota.ok && e.cota.erro) {
+    partes.push(`erro de cota: ${e.cota.erro}`);
+  }
   if (e.pingsOk + e.pingsFail > 0) {
     partes.push(`${e.pingsOk} ping${e.pingsOk === 1 ? "" : "s"} ok${e.pingsFail > 0 ? `, ${e.pingsFail} falha${e.pingsFail === 1 ? "" : "s"}` : ""}`);
   }

@@ -38,6 +38,8 @@ export interface Config {
   pingTimeoutMs: number;
   /** Timeout da consulta de cota. */
   usageTimeoutMs: number;
+  /** Percentual que dispara o aviso de "cota acabando". */
+  usageAlertPercent: number;
   /** Chaves VAPID para Web Push (notificações no celular). Vazio = push desligado. */
   vapidPublicKey: string;
   vapidPrivateKey: string;
@@ -64,6 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     claudeBin: env.CLAUDE_BIN ?? "claude",
     pingTimeoutMs: num(env.PING_TIMEOUT_MS, 150_000),
     usageTimeoutMs: num(env.USAGE_TIMEOUT_MS, 8_000),
+    usageAlertPercent: num(env.USAGE_ALERT_PERCENT, 70),
     vapidPublicKey: env.VAPID_PUBLIC_KEY ?? "",
     vapidPrivateKey: env.VAPID_PRIVATE_KEY ?? "",
     vapidSubject: env.VAPID_SUBJECT ?? "mailto:jarvis@localhost",

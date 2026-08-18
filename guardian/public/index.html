@@ -149,6 +149,18 @@
   }
   .rodape button:active { background: var(--card); }
   .erro-tela { color: var(--vermelho); font-size: 13px; padding: 12px; background: var(--card); border-radius: 10px; border: 1px solid var(--borda); }
+  /* Motivo da cota quebrada (o chip "sem cota" mostra só o rótulo; aqui
+     vai a explicação que o guardião devolveu — sessão, 429, rede...). */
+  .cota-erro {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--vermelho);
+    background: rgba(248, 113, 113, 0.08);
+    border: 1px solid rgba(248, 113, 113, 0.25);
+    border-radius: 8px;
+    padding: 6px 10px;
+    line-height: 1.4;
+  }
   .atualizado { font-variant-numeric: tabular-nums; }
 
   /* ---------- barra de abas: cápsula de vidro flutuante (Liquid Glass) ----------
@@ -500,13 +512,20 @@ function comparaOrdem(a, b) {
   return 0;
 }
 
-function chip(c) {
+/* Janela 5h viva = `resets_at` no futuro. A utilização pode ser 0,0% mesmo
+   com a janela ativa (um "oi" minúsculo arredonda para zero), então não dá
+   para usá-la como teste de "tem janela". */
+function janelaViva(fh, agora) {
+  return !!fh && !!fh.resetsAtMs && fh.resetsAtMs > agora;
+}
+
+function chip(c, agora) {
   if (c.estado.bloqueadaSemanal || c.estado.bloqueadaMensal) return '<span class="chip travada">travada</span>';
   if (c.estado.leaseAtivo) return '<span class="chip uso">em uso</span>';
   const fh = c.estado.cota?.fiveHour;
   if (c.estado.cota && !c.estado.cota.ok) return '<span class="chip erro">sem cota</span>';
   if (fh && fh.utilization !== null && fh.utilization >= 100) return '<span class="chip erro">no limite 5h</span>';
-  if (fh && (fh.utilization === 0 || fh.resetsAtMs == null)) return '<span class="chip ok">sem janela</span>';
+  if (fh && !janelaViva(fh, agora)) return '<span class="chip ok">sem janela</span>';
   return '<span class="chip ok">ok</span>';
 }
 
@@ -527,12 +546,16 @@ function render() {
     const proxima = e.proximaAcaoEm ? (e.proximaAcaoEm - agora) : null;
     const ultimoPing = e.ultimoPing ? new Date(e.ultimoPing).toLocaleTimeString("pt-BR") : "nunca";
     const classe = (e.bloqueadaSemanal || e.bloqueadaMensal) ? " bloqueada" : "";
-    const semjanela = fh && (fh.utilization === 0 || fh.resetsAtMs == null);
+    const semjanela = fh && !janelaViva(fh, agora);
+    const cotaErro = e.cota && !e.cota.ok && e.cota.erro
+      ? `<div class="cota-erro">⚠️ ${esc(e.cota.erro)}</div>`
+      : "";
     return `<div class="conta${classe}">
       <div class="conta-head">
         <span class="conta-nome">${esc(c.name)}</span>
-        ${chip(c)}
+        ${chip(c, agora)}
       </div>
+      ${cotaErro}
       <div class="janelas">
         <div class="janela">
           <div class="linha"><span>Janela 5h</span>
@@ -753,7 +776,7 @@ async function estadoPush() {
   $pushCard.style.display = aba === "contas" ? "flex" : "none";
   $pushTitulo.textContent = ativo ? "Notificações ativas" : "Ativar notificações";
   $pushSub.textContent = ativo
-    ? "Você será avisado quando uma conta liberar ou travar."
+    ? "Você será avisado sobre uso, retorno de cota e cada oi bem-sucedido."
     : "Instale o app e receba avisos mesmo com o PC desligado.";
   $pushBtn.textContent = ativo ? "Desativar" : "Ativar";
   $pushBtn.classList.toggle("ativo", ativo);

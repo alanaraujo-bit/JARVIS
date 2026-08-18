@@ -67,6 +67,10 @@ fn round_trip_real_em_disco_preserva_tudo() {
             created_at: 1_754_000_000_001,
         }],
         default_claude_account_id: Some("acc-pessoal".into()),
+        guardian: jarvis_lib::config::GuardianConfig {
+            url: "https://guardian.test".into(),
+            token: "abc123".into(),
+        },
     };
 
     fs::write(&arquivo, serde_json::to_string_pretty(&original).unwrap()).unwrap();
@@ -95,6 +99,10 @@ fn round_trip_real_em_disco_preserva_tudo() {
     // prova que o campo de fato atravessa o round-trip.
     assert!(lido.ui.rail_expanded);
     assert_eq!(lido.layout, original.layout);
+    // A conexão com o guardião sobrevive ao disco — sem isso, todo reinício
+    // do app desligaria o painel do guardião (URL e token zerados).
+    assert_eq!(lido.guardian.url, "https://guardian.test");
+    assert_eq!(lido.guardian.token, "abc123");
 
     let _ = fs::remove_dir_all(&dir);
 }

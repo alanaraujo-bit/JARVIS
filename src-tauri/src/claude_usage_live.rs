@@ -25,6 +25,9 @@ use crate::claude_usage::parse_rfc3339_ms_com_offset;
 const URL_USAGE: &str = "https://api.anthropic.com/api/oauth/usage";
 /// Cabeçalho beta exigido pelo endpoint.
 const BETA_USAGE: &str = "oauth-2025-04-20";
+/// A Anthropic coloca requisições sem User-Agent de CLI num bucket de
+/// rate-limit agressivo (429) — imitar o formato da CLI evita esse balde.
+const USER_AGENT: &str = "claude-code/2.1.4";
 /// Uma consulta que demore mais que isto não vale a espera: a cota é um
 /// dado de apoio, não o caminho crítico do app.
 const TIMEOUT: Duration = Duration::from_secs(8);
@@ -149,6 +152,7 @@ async fn consultar(token: &str) -> Result<LiveUsage, String> {
         .header("Authorization", format!("Bearer {token}"))
         .header("anthropic-beta", BETA_USAGE)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::USER_AGENT, USER_AGENT)
         .send()
         .await
         .map_err(|e| format!("sem conexão com a Anthropic — mostrando estimativa local ({e})"))?;

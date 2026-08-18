@@ -22,6 +22,8 @@ function descreve(e: GuardianEvent): string {
     case "blocked_monthly": return `conta ${e.accountId} no limite mensal de gasto`;
     case "auth_error": return `conta ${e.accountId} com sessão inválida — pede /login`;
     case "window_freed": return `janela de 5h da conta ${e.accountId} liberou`;
+    case "usage_warning": return `conta ${e.accountId} atingiu ${Math.round(e.percent)}% na janela ${e.janela}`;
+    case "usage_restored": return `cota da janela ${e.janela} da conta ${e.accountId} retornou`;
   }
 }
 
@@ -46,12 +48,12 @@ const notifier = new Notifier(store, {
 
 /** Cooldown por (conta, tipo) — não repetir aviso igual em cima de outro. */
 const ultimoAviso = new Map<string, number>();
-function avisa(chave: string, cooldownMs: number, titulo: string, corpo: string): void {
+function avisa(chave: string, cooldownMs: number, titulo: string, corpo: string, tipo: string): void {
   const agora = Date.now();
   const ultimo = ultimoAviso.get(chave) ?? 0;
   if (agora - ultimo < cooldownMs) return;
   ultimoAviso.set(chave, agora);
-  void notifier.notify(titulo, corpo);
+  void notifier.notify(titulo, corpo, tipo);
 }
 
 const nome = (id: string): string => store.get(id)?.name ?? id;
@@ -60,30 +62,60 @@ const scheduler = new Scheduler(store, cfg, (e) => {
   console.log(`[guardian] ${descreve(e)}`);
   switch (e.t) {
     case "ping_ok":
-      break; // acontece a cada janela — seria ruído notificar
+      // Pedido explícito: cada "oi" bem-sucedido é um marco útil. Ele
+      // confirma que a conta saiu do repouso ou que sua janela de 5h foi
+      // renovada sem depender do PC estar ligado.
+      void notifier.notify(
+        "⚡ JARVIS · Conta acordada",
+        `Conta "${nome(e.accountId)}": oi enviado com sucesso; a janela de 5h foi iniciada ou renovada.`,
+        "ping",
+      );
+      break;
     case "ping_fail":
-      avisa(`falha:${e.accountId}`, 30 * 60_000, "JARVIS: ping falhou", `Conta "${nome(e.accountId)}": ${e.reason}`);
+      avisa(`falha:${e.accountId}`, 30 * 60_000, "🔴 JARVIS · Ping falhou", `Conta "${nome(e.accountId)}": ${e.reason}`, "error");
       break;
     case "blocked_weekly": {
       // Fuso explícito: o servidor roda em US East; o usuário está em São Paulo.
       const data = e.resetsAtMs
         ? new Date(e.resetsAtMs).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
         : "em breve";
-      avisa(`semanal:${e.accountId}`, 6 * 60 * 60_000, "JARVIS: conta travada", `Conta "${nome(e.accountId)}" travada no limite semanal — libera ${data}.`);
+      avisa(`semanal:${e.accountId}`, 6 * 60 * 60_000, "⛔ JARVIS · Conta travada", `Conta "${nome(e.accountId)}" travada no limite semanal — libera ${data}.`, "blocked");
       break;
     }
     case "weekly_freed":
-      avisa(`liberou:${e.accountId}`, 6 * 60 * 60_000, "JARVIS: conta liberada! 🎉", `Conta "${nome(e.accountId)}" liberou o limite semanal.`);
+      avisa(`liberou:${e.accountId}`, 6 * 60 * 60_000, "🟢 JARVIS · Conta liberada", `Conta "${nome(e.accountId)}" liberou o limite semanal.`, "restored");
       break;
     case "blocked_monthly":
-      avisa(`mensal:${e.accountId}`, 12 * 60 * 60_000, "JARVIS: limite mensal", `Conta "${nome(e.accountId)}" atingiu o limite mensal de gasto.`);
+      avisa(`mensal:${e.accountId}`, 12 * 60 * 60_000, "⛔ JARVIS · Limite mensal", `Conta "${nome(e.accountId)}" atingiu o limite mensal de gasto.`, "blocked");
       break;
     case "auth_error":
-      avisa(`auth:${e.accountId}`, 2 * 60 * 60_000, "JARVIS: sessão inválida", `Conta "${nome(e.accountId)}" precisa de /login no Claude Code.`);
+      avisa(`auth:${e.accountId}`, 2 * 60 * 60_000, "🔐 JARVIS · Sessão inválida", `Conta "${nome(e.accountId)}" precisa de /login no Claude Code.`, "error");
       break;
     case "window_freed":
-      avisa(`janela:${e.accountId}`, 30 * 60_000, "JARVIS: janela liberada ✓", `Janela de 5h da conta "${nome(e.accountId)}" liberou.`);
+      avisa(`janela:${e.accountId}`, 30 * 60_000, "🟢 JARVIS · Janela liberada", `Janela de 5h da conta "${nome(e.accountId)}" liberou.`, "restored");
       break;
+    case "usage_warning": {
+      const janela = e.janela === "fiveHour" ? "5h" : "7 dias";
+      avisa(
+        `uso:${e.accountId}:${e.janela}`,
+        6 * 60 * 60_000,
+        "🟡 JARVIS · Cota acabando",
+        `Conta "${nome(e.accountId)}" chegou a ${Math.round(e.percent)}% na janela de ${janela}.`,
+        "warning",
+      );
+      break;
+    }
+    case "usage_restored": {
+      const janela = e.janela === "fiveHour" ? "5h" : "7 dias";
+      avisa(
+        `retorno:${e.accountId}:${e.janela}`,
+        30 * 60_000,
+        "🟢 JARVIS · Cota voltou",
+        `A janela de ${janela} da conta "${nome(e.accountId)}" voltou a ter cota disponível.`,
+        "restored",
+      );
+      break;
+    }
   }
 });
 

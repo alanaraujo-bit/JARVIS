@@ -32,6 +32,15 @@ export interface AccountRecord {
   createdAt: number;
   /** Último custo sincronizado pelo PC. `null` = ainda não sincronizou. */
   custo: CustoPc | null;
+  /** Memória durável dos alertas de cota, para não repetir após redeploy. */
+  alertas?: AlertasCota;
+}
+
+export interface AlertasCota {
+  fiveHourWarnedFor: number | null;
+  sevenDayWarnedFor: number | null;
+  fiveHourWasHigh: boolean;
+  sevenDayWasHigh: boolean;
 }
 
 /** Estado em memória de uma conta — o que o agendador mantém vivo. */
@@ -67,6 +76,9 @@ export interface AccountRuntime {
 export interface Account extends AccountRecord {
   runtime: AccountRuntime;
 }
+
+export type JanelaAlerta = "fiveHour" | "sevenDay";
+export type TransicaoAlerta = "warning" | "restored";
 
 /** Inscrição de Web Push de um aparelho (o PWA do celular). */
 export interface PushSub {
@@ -156,6 +168,7 @@ export class Store {
         ...r,
         // Config de antes da sincronização de custo não tem o campo.
         custo: r.custo ?? null,
+        alertas: r.alertas ?? novosAlertas(),
         runtime: novoRuntime(),
       });
     }
@@ -170,6 +183,7 @@ export class Store {
       enabled: a.enabled,
       createdAt: a.createdAt,
       custo: a.custo,
+      alertas: a.alertas,
     }));
     const tmp = this.file + ".tmp";
     fs.writeFileSync(tmp, JSON.stringify(records, null, 2));
@@ -194,6 +208,7 @@ export class Store {
       enabled: input.enabled ?? true,
       createdAt: Date.now(),
       custo: null,
+      alertas: novosAlertas(),
       runtime: novoRuntime(),
     };
     this.accounts.set(input.id, account);
@@ -231,11 +246,43 @@ export class Store {
    * rotaciona o token e reescreve o `.credentials.json` de trabalho — sem isto
    * o store guardaria um refresh token morto e a conta quebraria num redeploy.
    */
-  updateCredentials(id: string, credentialsJson: string): void {
+  updateCredentials(id: string, credentialsJson: string): boolean {
     const a = this.accounts.get(id);
     if (!a) throw new Error(`conta ${id} não existe`);
+    // O desktop pode reenviar a sessão a cada heartbeat. Não desgasta o volume
+    // nem derruba o cache de cota quando o conteúdo é exatamente o mesmo.
+    try {
+      if (decrypt(a.credentialsEnc, this.secret) === credentialsJson) return false;
+    } catch {
+      // Um registro ilegível é recuperado pela cópia atual do desktop.
+    }
     a.credentialsEnc = encrypt(credentialsJson, this.secret);
     this.save();
+    return true;
+  }
+
+  /**
+   * Cadastro e atualização no mesmo caminho. Assim uma rotação de OAuth no
+   * PC não exige remover/recriar a conta no servidor.
+   */
+  upsertCredentials(input: { id: string; name?: string; credentialsJson: string }): Account {
+    const existente = this.accounts.get(input.id);
+    if (!existente) {
+      return this.add({ id: input.id, name: input.name ?? input.id, credentialsJson: input.credentialsJson });
+    }
+    const nomeMudou = !!input.name?.trim() && input.name.trim() !== existente.name;
+    if (nomeMudou) existente.name = input.name!.trim();
+    const credencialMudou = this.updateCredentials(input.id, input.credentialsJson);
+    if (credencialMudou) {
+      // Não deixa um 401 antigo ficar visível até o próximo TTL.
+      existente.runtime.usage = null;
+      existente.runtime.usageAt = 0;
+      existente.runtime.nextActionAt = 0;
+      existente.runtime.blockedMonthly = false;
+      existente.runtime.blockedWeekly = false;
+    }
+    if (nomeMudou && !credencialMudou) this.save();
+    return existente;
   }
 
   /**
@@ -248,6 +295,40 @@ export class Store {
     if (!a) throw new Error(`conta ${id} não existe`);
     a.custo = { ...custo, updatedAt: Date.now() };
     this.save();
+  }
+
+  /**
+   * Registra o cruzamento de 70% e a volta da janela. O estado vive no
+   * volume, portanto um redeploy não transforma o mesmo alerta em spam.
+   */
+  observaAlerta(
+    id: string,
+    janela: JanelaAlerta,
+    utilization: number | null,
+    resetsAtMs: number | null,
+    threshold: number,
+  ): TransicaoAlerta[] {
+    const a = this.accounts.get(id);
+    if (!a || utilization === null || !Number.isFinite(utilization)) return [];
+    const alertas = a.alertas ?? (a.alertas = novosAlertas());
+    const highKey = janela === "fiveHour" ? "fiveHourWasHigh" : "sevenDayWasHigh";
+    const warnedKey = janela === "fiveHour" ? "fiveHourWarnedFor" : "sevenDayWarnedFor";
+    const alta = utilization >= threshold;
+    const anteriorAlta = alertas[highKey];
+    const anteriorReset = alertas[warnedKey];
+    const mudouJanela = anteriorReset !== null && resetsAtMs !== null && anteriorReset !== resetsAtMs;
+    const eventos: TransicaoAlerta[] = [];
+
+    if (anteriorAlta && (!alta || mudouJanela)) eventos.push("restored");
+    if (alta && resetsAtMs !== null && anteriorReset !== resetsAtMs) eventos.push("warning");
+
+    const mudou = anteriorAlta !== alta || (alta && anteriorReset !== resetsAtMs) || (!alta && anteriorReset !== null);
+    alertas[highKey] = alta;
+    // O marcador da janela só fica enquanto ela está em alerta. Ao voltar,
+    // a próxima janela pode alertar novamente mesmo se o reset vier nulo.
+    alertas[warnedKey] = alta ? resetsAtMs : null;
+    if (mudou) this.save();
+    return eventos;
   }
 
   /** Credenciais decifradas (para a CLI usar). Nunca logar isto. */
@@ -275,5 +356,14 @@ export function novoRuntime(): AccountRuntime {
     blockedMonthly: false,
     pingsOk: 0,
     pingsFail: 0,
+  };
+}
+
+function novosAlertas(): AlertasCota {
+  return {
+    fiveHourWarnedFor: null,
+    sevenDayWarnedFor: null,
+    fiveHourWasHigh: false,
+    sevenDayWasHigh: false,
   };
 }

@@ -32,12 +32,14 @@ export class Notifier {
     }
   }
 
-  async notify(title: string, body: string, url = "/"): Promise<void> {
+  async notify(title: string, body: string, kind = "info", url = "/"): Promise<void> {
     if (!this.habilitado) return;
     const subs = this.store.listPushSubs();
     if (subs.length === 0) return;
 
-    const payload = JSON.stringify({ title, body, url });
+    // `kind` chega ao service worker para preservar uma identidade visual e
+    // uma pilha separada por tipo de alerta no sistema operacional.
+    const payload = JSON.stringify({ title, body, kind, url });
     // TTL curto (1 dia): "janela liberou" atrasado demais não serve de nada.
     const opcoes = { TTL: 86_400 };
     const resultados = await Promise.allSettled(

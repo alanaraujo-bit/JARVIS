@@ -18,8 +18,10 @@ expirar — a espera cai para uma fração do tempo.
    - **Bloqueio mensal de gasto** → pausa total, re-checa em 6h, notifica.
    - **Limite semanal (7d) em 100%** → não pinga; acorda exatamente no
      `resets_at` semanal + margem para notificar "liberou" e renovar.
-   - **Sem janela 5h** (`resets_at` nulo/no passado ou uso 0%) → **pinga agora**
+   - **Sem janela 5h** (`resets_at` nulo/no passado) → **pinga agora**
      (se o usuário não estiver usando e respeitando o intervalo mínimo).
+     Janela viva é `resets_at` no futuro — a utilização pode ser 0,0% mesmo
+     com a janela ativa (um "oi" minúsculo arredonda para zero).
    - **Janela 5h ativa** → calcula `falta = resets_at - agora`:
      - `falta <= margem (60s)` → pinga (renova a janela);
      - senão → **dorme exatamente até `resets_at + margem`**. Nunca pinga
@@ -41,6 +43,7 @@ Todas as rotas exigem `Authorization: Bearer <JARVIS_GUARDIAN_TOKEN>`
 | GET | `/api/health` | heartbeat |
 | GET | `/api/status` | estado de todas as contas (cota, pings, próxima ação) |
 | POST | `/api/accounts` | cadastra conta `{ id, name, credentialsJson }` |
+| PUT | `/api/accounts/:id/credentials` | cria/atualiza a sessão OAuth da conta (sincronização automática do desktop) |
 | DELETE | `/api/accounts/:id` | remove conta |
 | PATCH | `/api/accounts/:id` | `{ enabled }` ou `{ name }` |
 | POST | `/api/accounts/:id/lease` | heartbeat "estou usando" (JARVIS, 2 min) |
@@ -79,6 +82,7 @@ curl -X POST https://SEU-APP.up.railway.app/api/accounts \
 | `VAPID_PUBLIC_KEY` | p/ push | — | chave pública VAPID (notificações no celular) |
 | `VAPID_PRIVATE_KEY` | p/ push | — | chave privada VAPID (só no ambiente) |
 | `VAPID_SUBJECT` | p/ push | — | `mailto:` seu, exigido pelo provedor de push |
+| `USAGE_ALERT_PERCENT` | — | 70 | percentual de uso que avisa que a cota está acabando |
 
 ## Deploy no Railway
 

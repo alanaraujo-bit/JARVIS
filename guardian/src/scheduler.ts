@@ -21,7 +21,7 @@ import path from "node:path";
 import { blockedWeekly, fetchUsage, weeklyResetsAtMs, type UsageSnapshot } from "./anthropic.js";
 import { runPing } from "./pinger.js";
 import type { Config } from "./config.js";
-import type { Account, Store } from "./store.js";
+import type { Account, JanelaAlerta, Store } from "./store.js";
 
 export type GuardianEvent =
   | { t: "ping_ok"; accountId: string }
@@ -30,7 +30,9 @@ export type GuardianEvent =
   | { t: "weekly_freed"; accountId: string }
   | { t: "blocked_monthly"; accountId: string }
   | { t: "auth_error"; accountId: string }
-  | { t: "window_freed"; accountId: string };
+  | { t: "window_freed"; accountId: string }
+  | { t: "usage_warning"; accountId: string; janela: JanelaAlerta; percent: number }
+  | { t: "usage_restored"; accountId: string; janela: JanelaAlerta };
 
 export class Scheduler {
   private running = false;
@@ -84,7 +86,27 @@ export class Scheduler {
         rt.usageAt = agora;
       }
       if (!rt.usage?.ok) {
-        rt.nextActionAt = agora + Math.min(60_000, this.cfg.usageStaleMs);
+        // Sessão inválida (401/403) ou ping manual: o ping é o ÚNICO jeito de
+        // renovar o token OAuth — a CLI faz o refresh e o
+        // `sincronizaCredenciais` grava o token novo. Sem isto, conta com
+        // sessão velha ficaria presa em "sem cota" para sempre: o `decide()`
+        // (onde o ping acontece) nunca roda com cota quebrada.
+        const status = rt.usage?.httpStatus ?? null;
+        // Sessão em uso ativo mantém o token fresco — o guardião nunca pinga
+        // conta que o usuário está usando (mesma regra do `decide()`).
+        const livre = agora >= rt.leaseUntil;
+        if (rt.forcePing || (livre && (status === 401 || status === 403))) {
+          rt.forcePing = false;
+          await this.pingSePuder(account, agora);
+        } else if (status === 429) {
+          // Rate limit da Anthropic: re-bater em 60s só piora. Recua 5 min.
+          rt.nextActionAt = agora + 5 * 60_000;
+        } else if (rt.usage) {
+          rt.nextActionAt = agora + Math.min(60_000, this.cfg.usageStaleMs);
+        }
+        // `rt.usage === null` (credenciais ausentes/indecifráveis): mantém o
+        // backoff de 10 min que a `consultaCota` já agendou — sobrescrever
+        // com 60s faria o `auth_error` (e o log) disparar a cada minuto.
         continue;
       }
       await this.decide(account, agora);
@@ -114,6 +136,10 @@ export class Scheduler {
   private async decide(account: Account, agora: number): Promise<void> {
     const rt = account.runtime;
     const usage = rt.usage!;
+
+    // Alertas de consumo e de retorno para as duas janelas. A Store persiste
+    // as transições: uma reinicialização não reenvia o mesmo push.
+    this.observaAlertas(account, usage);
 
     // 1) Bloqueio mensal de gasto: pausa total até desbloqueio manual.
     if (rt.blockedMonthly || usage.spendLimitReached) {
@@ -174,9 +200,14 @@ export class Scheduler {
     }
 
     // 4) Janela de 5h: decide se está na hora do próximo "oi".
+    // A janela "existe" quando `resets_at` está no futuro — a utilização
+    // pode ser 0,0% mesmo com a janela viva, porque um "oi" minúsculo
+    // arredonda para zero. Antes, `utilization <= 0` era tratado como "sem
+    // janela" e o guardião pingava a conta a cada 10 min à toa, num loop
+    // que nunca enxergava a janela que ele mesmo estava renovando.
     const fh = usage.fiveHour;
     const resetsAt = fh ? fh.resetsAtMs : null;
-    if (!fh || resetsAt === null || (fh.utilization ?? 0) <= 0 || resetsAt <= agora) {
+    if (!fh || resetsAt === null || resetsAt <= agora) {
       // Sem janela (conta ociosa) ou já expirada: hora de (re)começar.
       await this.pingSePuder(account, agora);
       return;
@@ -191,6 +222,30 @@ export class Scheduler {
     // Precisão: o próximo ciclo desta conta é exatamente no reset + margem.
     // (O tick global ainda acorda antes se a cota ficar velha e mudar.)
     rt.nextActionAt = resetsAt + this.cfg.pingMarginMs;
+  }
+
+  private observaAlertas(account: Account, usage: UsageSnapshot): void {
+    const janelas: [JanelaAlerta, typeof usage.fiveHour][] = [
+      ["fiveHour", usage.fiveHour],
+      ["sevenDay", usage.sevenDay],
+    ];
+    for (const [janela, info] of janelas) {
+      if (!info) continue;
+      const eventos = this.store.observaAlerta(
+        account.id,
+        janela,
+        info.utilization,
+        info.resetsAtMs,
+        this.cfg.usageAlertPercent,
+      );
+      for (const evento of eventos) {
+        if (evento === "warning") {
+          this.onEvent({ t: "usage_warning", accountId: account.id, janela, percent: info.utilization ?? this.cfg.usageAlertPercent });
+        } else {
+          this.onEvent({ t: "usage_restored", accountId: account.id, janela });
+        }
+      }
+    }
   }
 
   /**

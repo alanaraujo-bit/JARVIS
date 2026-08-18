@@ -97,6 +97,30 @@ export class ApiServer {
         return;
       }
 
+      // Caminho idempotente usado pelo desktop: cria a conta se ela ainda não
+      // existe e, se já existe, substitui a sessão OAuth que acabou de rodar.
+      // Credenciais nunca voltam na resposta.
+      const mCredenciais = rota.match(/^\/api\/accounts\/([^/]+)\/credentials$/);
+      if (mCredenciais && req.method === "PUT") {
+        const id = descodifica(mCredenciais[1]);
+        void this.lerJson(req).then((body) => {
+          const credentialsJson = String(body?.credentialsJson ?? "");
+          const name = typeof body?.name === "string" ? body.name : undefined;
+          if (!credentialsJson.trim()) {
+            this.json(res, 400, { error: "credentialsJson é obrigatório" });
+            return;
+          }
+          try {
+            JSON.parse(credentialsJson);
+            const conta = this.store.upsertCredentials({ id, name, credentialsJson });
+            this.json(res, 200, { conta: this.visao(conta) });
+          } catch (e) {
+            this.json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+          }
+        });
+        return;
+      }
+
       const mDel = rota.match(/^\/api\/accounts\/([^/]+)$/);
       if (mDel && (req.method === "DELETE" || req.method === "PATCH")) {
         // Ids de conta são e-mails (têm `@`), então o JARVIS manda URL-encoded

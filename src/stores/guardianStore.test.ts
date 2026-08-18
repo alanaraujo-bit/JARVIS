@@ -105,9 +105,9 @@ describe("guardianStore — painel do guardião 24/7", () => {
 
     const s = useGuardianStore.getState();
     expect(s.erro).toMatch(/login/);
-    // Nenhuma chamada de POST de cadastro: sem credencial não há o que mandar.
+    // Nenhuma chamada de atualização: sem credencial não há o que mandar.
     const urls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
-    expect(urls.some((u) => u.endsWith("/api/accounts"))).toBe(false);
+    expect(urls.some((u) => u.endsWith("/credentials"))).toBe(false);
   });
 
   test("registrarConta sem configuração avisa antes de tudo", async () => {
@@ -117,23 +117,37 @@ describe("guardianStore — painel do guardião 24/7", () => {
     expect(useGuardianStore.getState().erro).toMatch(/configure o guardião/);
   });
 
-  test("registrarConta manda as credenciais lidas pelo IPC e atualiza o status", async () => {
+  test("registrarConta envia as credenciais por uma atualização idempotente", async () => {
     await useGuardianStore.getState().carregar();
     await useGuardianStore.getState().registrarConta("acc-1", "Minha Conta");
 
     expect(ipc.claudeAccountCredentials).toHaveBeenCalledWith("acc-1");
-    const post = (fetch as ReturnType<typeof vi.fn>).mock.calls.find((c) =>
-      String(c[0]).endsWith("/api/accounts"),
+    const put = (fetch as ReturnType<typeof vi.fn>).mock.calls.find((c) =>
+      String(c[0]).endsWith("/api/accounts/acc-1/credentials"),
     );
-    expect(post).toBeDefined();
-    expect(post![1]).toMatchObject({
-      method: "POST",
+    expect(put).toBeDefined();
+    expect(put![1]).toMatchObject({
+      method: "PUT",
       body: JSON.stringify({
-        id: "acc-1",
         name: "Minha Conta",
         credentialsJson: '{"claudeAiOauth":{"refreshToken":"x"}}',
       }),
     });
+  });
+
+  test("carregar reconcilia automaticamente as credenciais locais", async () => {
+    ipc.configLoad.mockResolvedValue({
+      guardian: { url: "https://guardian.test", token: "tokentokentokentoken" },
+      claudeAccounts: [{ id: "acc-1", name: "Minha Conta", color: "#fff", createdAt: 1 }],
+    });
+
+    await useGuardianStore.getState().carregar();
+
+    expect(ipc.claudeAccountCredentials).toHaveBeenCalledWith("acc-1");
+    expect(fetch).toHaveBeenCalledWith(
+      "https://guardian.test/api/accounts/acc-1/credentials",
+      expect.objectContaining({ method: "PUT" }),
+    );
   });
 
   test("sinalizarUso só renova lease de contas cadastradas no guardião", async () => {

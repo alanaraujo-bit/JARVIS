@@ -9,6 +9,10 @@
 
 const URL_USAGE = "https://api.anthropic.com/api/oauth/usage";
 const BETA_USAGE = "oauth-2025-04-20";
+// A Anthropic coloca requisições sem User-Agent de CLI num bucket de
+// rate-limit agressivo (429) — ferramentas de terceiros quebraram por causa
+// disto em 2026. Imitar o formato da CLI evita esse balde.
+const USER_AGENT = "claude-code/2.1.4";
 
 export interface WindowInfo {
   utilization: number | null;
@@ -53,6 +57,7 @@ export async function fetchUsage(accessToken: string, timeoutMs: number): Promis
         Authorization: `Bearer ${accessToken}`,
         "anthropic-beta": BETA_USAGE,
         "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
       },
     });
     if (res.status === 401 || res.status === 403) {

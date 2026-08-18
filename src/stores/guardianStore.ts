@@ -98,6 +98,11 @@ interface GuardianStore {
   fecharPainel: () => void;
   atualizarStatus: () => Promise<void>;
   registrarConta: (id: string, name: string) => Promise<void>;
+  /**
+   * Espelha as sessões OAuth atuais do PC no servidor. É idempotente: cria
+   * contas ausentes e atualiza as existentes sem apagá-las.
+   */
+  sincronizarCredenciais: (contas: ClaudeAccountPayload[]) => Promise<void>;
   removerConta: (id: string) => Promise<void>;
   alternarConta: (id: string, enabled: boolean) => Promise<void>;
   pingarAgora: (id: string) => Promise<void>;
@@ -209,6 +214,21 @@ function erroDe(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** Envia uma sessão local sem jamais colocá-la no estado React/Zustand. */
+async function enviarCredenciais(
+  cfg: GuardianConfigPayload,
+  id: string,
+  name?: string,
+): Promise<boolean> {
+  const credentialsJson = await claudeAccountCredentials(id);
+  if (!credentialsJson) return false;
+  await api(cfg, `/api/accounts/${encodeURIComponent(id)}/credentials`, {
+    method: "PUT",
+    body: { ...(name ? { name } : {}), credentialsJson },
+  });
+  return true;
+}
+
 export const useGuardianStore = create<GuardianStore>((set, get) => ({
   configuracao: null,
   carregado: false,
@@ -224,7 +244,13 @@ export const useGuardianStore = create<GuardianStore>((set, get) => ({
       set({ configuracao, carregado: true });
       // Já busca o status de largada: o heartbeat (lease) depende de saber
       // quais contas estão cadastradas no guardião.
-      if (configuracao.url && configuracao.token) void get().atualizarStatus();
+      if (configuracao.url && configuracao.token) {
+        // Ao abrir o JARVIS, reconcilia o cofre remoto com as sessões que
+        // acabaram de ser lidas deste PC. Logins rotacionados voltam a valer
+        // sem uma ação manual do usuário.
+        await get().sincronizarCredenciais(cfg.claudeAccounts ?? []);
+        await get().atualizarStatus();
+      }
     } catch {
       // Sem config ainda (primeira execução): o painel nasce vazio.
       set({ carregado: true });
@@ -236,6 +262,8 @@ export const useGuardianStore = create<GuardianStore>((set, get) => ({
     try {
       await configSave({ guardian: cfg });
       set({ configuracao: cfg });
+      const completo = await configLoad();
+      await get().sincronizarCredenciais(completo.claudeAccounts ?? []);
       await get().atualizarStatus();
       set({ carregando: false });
       return true;
@@ -276,20 +304,27 @@ export const useGuardianStore = create<GuardianStore>((set, get) => ({
     }
     set({ carregando: true, erro: null });
     try {
-      const cred = await claudeAccountCredentials(id);
-      if (!cred) {
+      const enviada = await enviarCredenciais(cfg, id, name);
+      if (!enviada) {
         set({
           carregando: false,
           erro: "esta conta ainda não tem login salvo — entre nela (botão Entrar) e tente de novo",
         });
         return;
       }
-      await api(cfg, "/api/accounts", { method: "POST", body: { id, name, credentialsJson: cred } });
       await get().atualizarStatus();
       set({ carregando: false });
     } catch (e) {
       set({ carregando: false, erro: erroDe(e) });
     }
+  },
+
+  sincronizarCredenciais: async (contas) => {
+    const cfg = get().configuracao;
+    if (!cfg?.url.trim() || !cfg.token || contas.length === 0) return;
+    // Falha de uma conta não pode impedir as demais nem transformar a abertura
+    // do JARVIS em erro. A próxima abertura/heartbeat tenta de novo.
+    await Promise.allSettled(contas.map((c) => enviarCredenciais(cfg, c.id, c.name)));
   },
 
   removerConta: async (id) => {
@@ -352,6 +387,10 @@ export const useGuardianStore = create<GuardianStore>((set, get) => ({
     const alvo = ids.filter((id) => registradas.has(id));
     if (alvo.length === 0) return;
     for (const id of alvo) {
+      // Este método é chamado de minuto em minuto enquanto o terminal está
+      // aberto. Após um `/login`, o próximo heartbeat leva a nova sessão ao
+      // Railway automaticamente; o servidor evita regravar se nada mudou.
+      void enviarCredenciais(cfg, id).catch(() => {});
       void api(cfg, `/api/accounts/${encodeURIComponent(id)}/lease`, { method: "POST" }).catch(
         () => {},
       );

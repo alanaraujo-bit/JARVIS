@@ -9,7 +9,7 @@
  */
 
 // v5: barra de abas em cápsula de vidro flutuante (Liquid Glass) + ícones SVG.
-const CACHE = "jarvis-guardian-v5";
+const CACHE = "jarvis-guardian-v6";
 const CONCHA = ["/", "/index.html", "/manifest.webmanifest", "/icon-256.png", "/icon-512.png"];
 
 self.addEventListener("install", (ev) => {
@@ -55,7 +55,7 @@ self.addEventListener("fetch", (ev) => {
 /* ---------------------------- notificações push --------------------------- */
 
 self.addEventListener("push", (ev) => {
-  let dados = { title: "JARVIS", body: "Notificação do guardião", url: "/" };
+  let dados = { title: "JARVIS", body: "Notificação do guardião", kind: "info", url: "/" };
   try {
     if (ev.data) dados = { ...dados, ...JSON.parse(ev.data.text()) };
   } catch {
@@ -66,7 +66,10 @@ self.addEventListener("push", (ev) => {
       body: dados.body,
       icon: "/icon-256.png",
       badge: "/icon-256.png",
-      tag: "jarvis-guardian",
+      // Tipos diferentes não se substituem no Centro de Notificações. Cada
+      // categoria tem título/emoji próprio para reconhecimento imediato.
+      tag: `jarvis-${dados.kind || "info"}`,
+      renotify: true,
       data: { url: dados.url },
     }),
   );
