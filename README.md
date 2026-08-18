@@ -33,7 +33,11 @@ Terminal na tela com xterm.js acelerado por WebGL.
 horizontal e vertical em árvore, divisores arrastáveis, e reinício de um shell
 que morreu sem perder o painel. Busca no histórico com `Ctrl+F`, e
 copiar/colar em `Ctrl+Shift+C` / `Ctrl+Shift+V` — o `Ctrl+C` continua sendo
-interrupção, mesmo com texto selecionado.
+interrupção, mesmo com texto selecionado. Colar também aceita imagem: o print
+do clipboard vira um PNG em `.jarvis/clipboard/`, dentro da pasta da sessão, e o
+que entra no shell é o caminho dele — que é o que os agentes de IA sabem abrir.
+A pasta é a da sessão de propósito: agente de IA trata o diretório de trabalho
+como fronteira de permissão e para para pedir aprovação em caminho de fora.
 
 **Workspaces.** Uma pasta de projeto vira um workspace com nome e cor; os
 terminais novos nascem no diretório dele, e as abas carregam a cor do projeto.
@@ -79,6 +83,7 @@ o motor de PTY já mantém.
 | `Ctrl+Shift+S` | Estatísticas de uso |
 | `Ctrl+F` | Buscar no histórico do terminal |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copiar / colar |
+| `Ctrl+Alt+V` | Colar a imagem do clipboard (ignora o texto) |
 | `F2` | Renomear a aba (ou o workspace) em foco |
 
 As combinações evitam de propósito `Ctrl+T`, `Ctrl+W` e `Alt+Seta`, que os

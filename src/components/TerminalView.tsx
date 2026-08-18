@@ -7,7 +7,14 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { SearchAddon } from "@xterm/addon-search";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
-import { readClipboardText, writeClipboardText } from "../lib/clipboard";
+import {
+  readClipboardText,
+  writeClipboardText,
+  saveClipboardImage,
+  planejarColagem,
+  planejarColagemDeEvento,
+  type PlanoDeColagem,
+} from "../lib/clipboard";
 import { diffTexto } from "../lib/dictation";
 import { registerTerminal, unregisterTerminal } from "../lib/terminalRegistry";
 import { localTransport, type TermTransport } from "../lib/termTransport";
@@ -310,13 +317,32 @@ export function TerminalView({
     // O clipboard é lido/escrito pelo plugin oficial do Tauri: o
     // `navigator.clipboard` do WebView2 falha em silêncio, e era isso que
     // deixava o copiar/colar "quase funcionando".
-    const colar = () => {
+    // Colar imagem: o terminal só transporta texto, então o bitmap do
+    // clipboard vira um PNG em disco e o que entra no shell é o *caminho* —
+    // que é justamente o que os agentes de IA sabem abrir.
+    const colarImagem = () => {
+      void saveClipboardImage(sessionId).then((caminho) => {
+        if (disposed || !caminho) return;
+        term.paste(caminho);
+      });
+    };
+
+    const executarPlano = (plano: PlanoDeColagem) => {
+      // A leitura é assíncrona: se o painel fechou enquanto o clipboard era
+      // lido, o terminal já está descartado — pastar nele seria operar um
+      // xterm morto.
+      if (disposed) return;
+      if (plano.tipo === "texto") term.paste(plano.texto);
+      else if (plano.tipo === "imagem") colarImagem();
+    };
+
+    const colar = (opcoes?: { forcarImagem?: boolean }) => {
+      if (opcoes?.forcarImagem) {
+        executarPlano(planejarColagem("", opcoes));
+        return;
+      }
       void readClipboardText().then((texto) => {
-        // A leitura é assíncrona: se o painel fechou enquanto o clipboard era
-        // lido, o terminal já está descartado — pastar nele seria operar um
-        // xterm morto.
-        if (disposed || !texto) return;
-        term.paste(texto);
+        executarPlano(planejarColagem(texto, opcoes));
       });
     };
 
@@ -334,6 +360,17 @@ export function TerminalView({
 
       if (ctrl && e.shiftKey && !e.altKey && tecla === "g") {
         setDictando((aberto) => !aberto);
+        return false;
+      }
+
+      // Ctrl+Alt+V cola a imagem do clipboard ignorando o texto. Sem ele não
+      // dá para colar um print copiado do navegador ou do Excel, que sempre
+      // vêm acompanhados de texto e por isso nunca chegariam na imagem. O
+      // Ctrl+Shift+I, que seria o atalho óbvio, já é a barra de IA — e no
+      // WebView2 ele também é o DevTools.
+      if (ctrl && e.altKey && !e.shiftKey && tecla === "v") {
+        e.preventDefault();
+        colar({ forcarImagem: true });
         return false;
       }
 
@@ -370,11 +407,11 @@ export function TerminalView({
     // e o repassa com `term.paste` — que respeita o modo de colagem com
     // marcadores dos shells que o pedem (vim, nano, agentes de IA).
     const onPasteHost = (e: ClipboardEvent) => {
-      const texto = e.clipboardData?.getData("text/plain");
-      if (!texto) return;
+      const plano = planejarColagemDeEvento(e.clipboardData);
+      if (plano.tipo === "nada") return;
       e.preventDefault();
       e.stopPropagation();
-      term.paste(texto);
+      executarPlano(plano);
     };
     host.addEventListener("paste", onPasteHost, true);
 

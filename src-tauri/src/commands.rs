@@ -756,3 +756,28 @@ fn endereco_local(porta: u16) -> Option<String> {
     }
     Some(format!("ws://{ip}:{porta}"))
 }
+
+/// Grava a imagem do clipboard num PNG e devolve o caminho absoluto.
+///
+/// `None` significa "não havia imagem" — o front então segue com a colagem
+/// de texto normal. Ver `clipboard_image` para o porquê de não usar o plugin
+/// de clipboard do Tauri aqui.
+///
+/// `session_id` decide *onde* gravar: o PNG vai para dentro do diretório da
+/// sessão porque os agentes de IA só leem arquivos da pasta de trabalho sem
+/// pedir permissão. Sem sessão conhecida, cai na pasta global do app.
+#[tauri::command(async)]
+pub fn clipboard_save_image(
+    manager: State<'_, PtyManager>,
+    session_id: Option<String>,
+) -> Result<Option<String>> {
+    let cwd = session_id.and_then(|id| {
+        manager
+            .list()
+            .into_iter()
+            .find(|s| s.id == id)
+            .map(|s| s.cwd)
+    });
+    let dir = crate::clipboard_image::pasta_para(cwd.as_deref());
+    crate::clipboard_image::salvar_do_clipboard(&dir)
+}
