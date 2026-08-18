@@ -677,6 +677,24 @@ export function installDevMock(): void {
       return null;
     },
 
+    /**
+     * Colagem de imagem. No app de verdade quem lê o bitmap é o `arboard` e
+     * o retorno é o caminho do PNG gravado; aqui devolvemos um caminho de
+     * mentira dentro da pasta da sessão, que é o que o terminal cola.
+     *
+     * `window.__jarvisMockSemImagem` deixa o e2e simular "não há imagem no
+     * clipboard" — o caso em que a colagem precisa não fazer nada em vez de
+     * escrever a palavra `null` no shell.
+     */
+    clipboard_save_image: (args) => {
+      const { sessionId } = args as unknown as { sessionId?: string };
+      const semImagem = (globalThis as Record<string, unknown>).__jarvisMockSemImagem;
+      if (semImagem) return null;
+      const sessao = sessions.get(sessionId ?? "");
+      const base = sessao?.cwd ?? "C:\\mock";
+      return `${base}\\.jarvis\\clipboard\\colado-mock.png`;
+    },
+
     ai_cancel: () => null,
   };
 

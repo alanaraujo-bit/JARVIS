@@ -400,6 +400,62 @@ test("colar com Ctrl+V traz o clipboard para o shell", async ({ page }) => {
   await esperaNoTerminal(page, "git status");
 });
 
+/**
+ * Colagem de imagem. O terminal só transporta texto, então o que precisa
+ * chegar ao shell é o *caminho* do PNG — é assim que o agente de IA recebe
+ * um print. Estes testes cobrem a fiação que os unitários não alcançam: a
+ * tecla passando pelo handler do xterm e o caminho saindo do outro lado.
+ */
+test("sem texto no clipboard, o Ctrl+V cola o caminho da imagem", async ({ page }) => {
+  await page.getByRole("button", { name: /PowerShell 7/ }).click();
+  await esperaNoTerminal(page, "backend simulado");
+
+  // É o caso do print puro (Win+Shift+S): bitmap sem texto nenhum junto.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.evaluate(() => navigator.clipboard.writeText(""));
+
+  await page.locator(".pane:not([hidden]) .xterm-helper-textarea").first().focus();
+  await page.keyboard.press("Control+v");
+
+  await esperaNoTerminal(page, "colado-mock.png");
+});
+
+test("o Ctrl+Alt+V ignora o texto e cola a imagem assim mesmo", async ({ page }) => {
+  await page.getByRole("button", { name: /PowerShell 7/ }).click();
+  await esperaNoTerminal(page, "backend simulado");
+
+  // Imagem copiada do navegador vem com a URL como texto: sem o atalho
+  // dedicado, a colagem normal pararia no texto e nunca veria a imagem.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.evaluate(() => navigator.clipboard.writeText("https://exemplo/foto.png"));
+
+  await page.locator(".pane:not([hidden]) .xterm-helper-textarea").first().focus();
+  await page.keyboard.press("Control+Alt+v");
+
+  await esperaNoTerminal(page, "colado-mock.png");
+  expect(await textoDoTerminal(page)).not.toContain("https://exemplo/foto.png");
+});
+
+test("clipboard sem imagem nenhuma não escreve lixo no shell", async ({ page }) => {
+  await page.getByRole("button", { name: /PowerShell 7/ }).click();
+  await esperaNoTerminal(page, "backend simulado");
+
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.evaluate(() => navigator.clipboard.writeText(""));
+  await page.evaluate(() => {
+    (window as unknown as Record<string, unknown>).__jarvisMockSemImagem = true;
+  });
+
+  await page.locator(".pane:not([hidden]) .xterm-helper-textarea").first().focus();
+  await page.keyboard.press("Control+v");
+
+  // Nada a colar é um não-evento: o shell não pode receber "null" nem "undefined".
+  await page.waitForTimeout(500);
+  const texto = await textoDoTerminal(page);
+  expect(texto).not.toContain("null");
+  expect(texto).not.toContain("undefined");
+});
+
 test("a barra de ditado digita no shell como se fosse o usuário", async ({ page }) => {
   await page.getByRole("button", { name: /PowerShell 7/ }).click();
   await esperaNoTerminal(page, "backend simulado");
