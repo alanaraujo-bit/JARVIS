@@ -151,10 +151,28 @@ export function TerminalView({
     try {
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => webgl.dispose());
+      // O atlas de glifos vive numa textura de GPU e é reciclado sob pressão
+      // (diff colorido, spinner de agente, muita cor/glifo diferente por
+      // segundo — exatamente a saída de um `git diff` com um agente rodando
+      // do lado). Quando o atlas troca, células que não foram redesenhadas
+      // NESTE frame continuam apontando pro glifo antigo daquele pedaço de
+      // textura — que pode ser lixo de qualquer coisa que passou por ali
+      // antes, sem relação nenhuma com o que o PTY realmente mandou. Isso é
+      // o "texto aleatório aparece do nada" que só um resize consertava
+      // (porque o resize é o único gatilho que já força um refresh — ver
+      // `syncSize` abaixo). Aqui cobrimos o gatilho de verdade: refresh total
+      // toda vez que o atlas muda.
+      webgl.onChangeTextureAtlas(() => term.refresh(0, term.rows - 1));
+      webgl.onAddTextureAtlasCanvas(() => term.refresh(0, term.rows - 1));
       term.loadAddon(webgl);
     } catch {
       /* renderizador DOM é o fallback silencioso */
     }
+
+    // Rede de segurança: qualquer resize que *não* passe pelos pontos já
+    // tratados em `syncSize` (ex.: o próprio xterm ajustando cols/rows por
+    // conta própria) também limpa o lixo de textura de um frame anterior.
+    const resizeRefreshSub = term.onResize(() => term.refresh(0, term.rows - 1));
 
     /* ----------------------------- tamanho ---------------------------- */
 
@@ -432,6 +450,7 @@ export function TerminalView({
       ro.disconnect();
       dataSub.dispose();
       binarySub.dispose();
+      resizeRefreshSub.dispose();
       pararSize?.();
       pararResync?.();
       host.removeEventListener("paste", onPasteHost, true);
