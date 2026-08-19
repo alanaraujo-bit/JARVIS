@@ -31,6 +31,8 @@ import { onCollabAiAsk } from "./lib/collabIpc";
 import { Icon, shellIcon } from "./components/Icon";
 import { buildAiContext, buildSystemPrompt, captureTerminalLines } from "./lib/aiContext";
 import { getTerminal } from "./lib/terminalRegistry";
+import { pollIdleTransitions } from "./lib/activityWatcher";
+import { janelaEmPrimeiroPlano, notificarTerminal } from "./lib/notifications";
 import { parseLayout, restoreLayout } from "./lib/restoreLayout";
 import { findOrphans, parseHistory, pruneHistory, type HistoryEntry } from "./lib/sessionHistory";
 import { resolveConta } from "./lib/claudeAccounts";
@@ -98,6 +100,13 @@ interface TabState {
    * depois da que acabou de sair da barra.
    */
   minimizedAt?: number;
+  /**
+   * `true` só depois que a pessoa renomeia a aba na mão (F2 ou duplo
+   * clique). Enquanto isso não acontece, a barra mostra o nome do projeto
+   * (workspace) no lugar do nome do shell — o nome do shell é o `title`
+   * inicial e continua aqui só como possível reserva de exibição.
+   */
+  renamed?: boolean;
 }
 
 const TEMA_ROTULO: Record<string, string> = {
@@ -335,6 +344,7 @@ export default function App() {
   homeRef.current = home;
   const profilesRef = useRef(profiles);
   profilesRef.current = profiles;
+  const nomesDeWorkspaceRef = useRef<Readonly<Record<string, string>>>({});
   const workspacesRef = useRef(workspaces);
   workspacesRef.current = workspaces;
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
@@ -1187,6 +1197,36 @@ export default function App() {
   }, []);
 
   /**
+   * Notificação nativa: uma sessão parou de produzir saída depois de uma
+   * rajada relevante (`activityWatcher`) e o JARVIS não está em primeiro
+   * plano. Cobre os dois casos que a pessoa quer saber sem estar olhando: um
+   * agente que terminou, ou um agente que parou para perguntar algo.
+   *
+   * Só dispara notificação de verdade se ninguém estiver vendo — checar o
+   * foco é assíncrono (`isFocused`/`isMinimized` do Tauri), por isso o
+   * `poll` não pode ser síncrono com o intervalo.
+   */
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      const idas = pollIdleTransitions();
+      if (idas.length === 0) return;
+      void (async () => {
+        if (!(await janelaEmPrimeiroPlano())) {
+          for (const sessionId of idas) {
+            const tab = tabsRef.current.find((t) =>
+              listLeaves(t.root).some((l) => l.sessionId === sessionId),
+            );
+            if (!tab) continue;
+            const corpo = tabPreview(tab) || "Terminal parou de produzir saída.";
+            void notificarTerminal({ titulo: tabLabel(tab, nomesDeWorkspaceRef.current), corpo });
+          }
+        }
+      })();
+    }, 500);
+    return () => window.clearInterval(t);
+  }, []);
+
+  /**
    * Sincronização de custos com o guardião: o custo real (em $) só existe nos
    * arquivos do PC (a CLI grava lá), então enquanto o JARVIS estiver aberto
    * ele empurra o valor de cada conta para o guardião a cada 10 min. É isso
@@ -1809,6 +1849,15 @@ export default function App() {
     [workspaces],
   );
 
+  const nomesDeWorkspace = useMemo(
+    () => Object.fromEntries(workspaces.map((w) => [w.id, w.name])),
+    [workspaces],
+  );
+  // Espelhado em ref pelo mesmo motivo de `tabsRef`: o watcher de
+  // notificação roda num intervalo com deps vazias e precisa do nome mais
+  // recente do workspace, não do que existia quando o efeito nasceu.
+  nomesDeWorkspaceRef.current = nomesDeWorkspace;
+
   /**
    * Conta que os próximos terminais vão usar, pela mesma precedência que o
    * `spawnFor` aplica de verdade. A barra mostra o resultado em vez do
@@ -2083,6 +2132,7 @@ export default function App() {
         activeTabId={activeTabId}
         sessions={sessions}
         coresDeWorkspace={coresDeWorkspace}
+        nomesDeWorkspace={nomesDeWorkspace}
         contaDaSessao={sessionAccounts}
         coresDeConta={coresDeConta}
         onActivate={setActiveTabId}
@@ -2288,6 +2338,8 @@ interface TabBarProps {
   sessions: Readonly<Record<string, SessionInfo>>;
   /** Cor de cada workspace, para pintar o ponto da aba. */
   coresDeWorkspace: Readonly<Record<string, string>>;
+  /** Nome de cada workspace, para rotular a aba pelo projeto. */
+  nomesDeWorkspace: Readonly<Record<string, string>>;
   /** Conta do Claude Code de cada sessão, e a cor de cada conta. */
   contaDaSessao: Readonly<Record<string, string>>;
   coresDeConta: Readonly<Record<string, string>>;
@@ -2301,6 +2353,39 @@ interface TabBarProps {
    */
   onMove: (fromId: string, toId: string) => void;
   onRename: (updater: (prev: TabState[]) => TabState[]) => void;
+}
+
+/**
+ * Rótulo mostrado na aba: nome do projeto quando ela pertence a um
+ * workspace e ninguém a renomeou na mão; senão, o `title` de sempre (nome do
+ * shell, ou o que a pessoa digitou no F2).
+ */
+function tabLabel(t: TabState, nomesDeWorkspace: Readonly<Record<string, string>>): string {
+  if (!t.renamed && t.workspaceId && nomesDeWorkspace[t.workspaceId]) {
+    return nomesDeWorkspace[t.workspaceId];
+  }
+  return t.title;
+}
+
+/**
+ * Últimas linhas com conteúdo do terminal da aba, para o tooltip da barra.
+ *
+ * É uma prévia da tela, não do que foi digitado — separar "o que foi
+ * mandado para a IA" do resto da saída exigiria interpretar o protocolo de
+ * cada agente; as últimas linhas visíveis já bastam para lembrar do que a
+ * conversa se trata só de bater o olho.
+ */
+function tabPreview(t: TabState): string {
+  const sessionId = listLeaves(t.root)[0]?.sessionId;
+  const term = sessionId ? getTerminal(sessionId) : undefined;
+  if (!term) return "";
+  const buf = term.buffer.active;
+  const linhas: string[] = [];
+  for (let i = buf.length - 1; i >= 0 && linhas.length < 3; i--) {
+    const linha = buf.getLine(i)?.translateToString(true).trim();
+    if (linha) linhas.unshift(linha);
+  }
+  return linhas.join("\n");
 }
 
 /** "dead": todo painel morreu. "partial": pelo menos um morreu, mas não todos. */
@@ -2317,6 +2402,7 @@ function TabBar({
   activeTabId,
   sessions,
   coresDeWorkspace,
+  nomesDeWorkspace,
   contaDaSessao,
   coresDeConta,
   onActivate,
@@ -2368,7 +2454,7 @@ function TabBar({
   const commitRename = (id: string, value: string) => {
     const title = value.trim();
     onRename((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, title: title || t.title } : t)),
+      prev.map((t) => (t.id === id ? { ...t, title: title || t.title, renamed: true } : t)),
     );
     setRenamingId(null);
   };
@@ -2469,8 +2555,11 @@ function TabBar({
               }}
             />
           ) : (
-            <span className="label" title={t.title}>
-              {t.title}
+            <span
+              className="label"
+              title={[t.title, tabPreview(t)].filter(Boolean).join("\n\n")}
+            >
+              {tabLabel(t, nomesDeWorkspace)}
             </span>
           )}
           <button

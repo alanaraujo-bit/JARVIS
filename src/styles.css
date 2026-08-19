@@ -1565,6 +1565,7 @@ body {
    Mesma mecânica do painel de IA, permitindo expansão fluida e sem quebrar
    os xterms abertos na tela. */
 .notes-panel {
+  position: relative;
   width: 0;
   min-width: 0;
   background: var(--surface-1);
@@ -1582,6 +1583,49 @@ body {
   width: var(--notes-panel-width);
   min-width: var(--notes-panel-width);
   border-left-width: var(--border-width);
+  /* O arraste muda a largura a cada pixel do mouse — a transição suave que
+     serve para abrir/fechar o painel deixaria o redimensionamento com um
+     atraso perceptível atrás do cursor. */
+  transition-property: none;
+}
+
+/* Alça de redimensionar, grudada na borda esquerda (o painel fica à
+   direita). Mais larga que a borda visível para não exigir mira cirúrgica
+   com o mouse. */
+.notes-panel-resize-handle {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
+}
+
+.notes-panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 3px;
+  width: 1px;
+  height: 100%;
+  background: transparent;
+  transition: background var(--dur-fast, 120ms) var(--ease-fluid);
+}
+
+.notes-panel-resize-handle:hover::after,
+.notes-panel-resize-handle.active::after {
+  background: var(--accent);
+}
+
+body.notes-panel-resizing {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+body.notes-panel-resizing * {
+  cursor: col-resize !important;
 }
 
 .notes-panel-inner {

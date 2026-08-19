@@ -793,3 +793,35 @@ pub fn clipboard_save_image(
 pub fn clipboard_read_image(path: String) -> Result<String> {
     crate::clipboard_image::ler_como_data_url(std::path::Path::new(&path))
 }
+
+/// Abre um caminho impresso no terminal (Ctrl+clique em cima dele).
+///
+/// Arquivo existente: revela no Explorer com ele já selecionado — abrir
+/// direto no programa associado seria surpreendente para, por exemplo, um
+/// `.rs` que a pessoa só queria localizar. Pasta existente: abre a própria
+/// pasta. Caminho que não existe mais (arquivo apagado, ainda citado num log
+/// antigo): sobe até o primeiro ancestral que existir, para o clique nunca
+/// cair num erro silencioso.
+#[tauri::command(async)]
+pub fn reveal_path(path: String) -> Result<()> {
+    let mut p = std::path::PathBuf::from(&path);
+    if p.is_file() {
+        std::process::Command::new("explorer")
+            .arg("/select,")
+            .arg(&p)
+            .spawn()
+            .map_err(|e| JarvisError::BadPayload(e.to_string()))?;
+        return Ok(());
+    }
+    while !p.exists() {
+        match p.parent() {
+            Some(parent) => p = parent.to_path_buf(),
+            None => return Err(JarvisError::BadPayload("caminho não encontrado".into())),
+        }
+    }
+    std::process::Command::new("explorer")
+        .arg(&p)
+        .spawn()
+        .map_err(|e| JarvisError::BadPayload(e.to_string()))?;
+    Ok(())
+}

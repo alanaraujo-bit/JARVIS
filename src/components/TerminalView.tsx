@@ -18,6 +18,9 @@ import {
 } from "../lib/clipboard";
 import { diffTexto } from "../lib/dictation";
 import { resolverCaminhoDaImagem } from "../lib/imagePreview";
+import { findPathMatches } from "../lib/pathLinks";
+import { revealPath } from "../lib/ipc";
+import { recordActivity } from "../lib/activityWatcher";
 import { registerTerminal, unregisterTerminal } from "../lib/terminalRegistry";
 import { localTransport, type TermTransport } from "../lib/termTransport";
 import { theme } from "../lib/theme";
@@ -181,6 +184,37 @@ export function TerminalView({
     term.loadAddon(search);
     searchRef.current = search;
     term.loadAddon(new WebLinksAddon());
+    // Caminhos de arquivo/pasta que um agente imprime (ex.: "Está aqui:
+    // C:\...\app-icon.png") viram links do mesmo jeito que uma URL: o xterm
+    // já exige Ctrl+clique para ativar qualquer link registrado, então não
+    // há nada a mais a fazer aqui para reproduzir esse gesto.
+    term.registerLinkProvider({
+      provideLinks(bufferLineNumber, callback) {
+        const line = term.buffer.active.getLine(bufferLineNumber - 1);
+        const text = line?.translateToString(false);
+        if (!text) {
+          callback(undefined);
+          return;
+        }
+        const matches = findPathMatches(text);
+        if (matches.length === 0) {
+          callback(undefined);
+          return;
+        }
+        callback(
+          matches.map((m) => ({
+            text: m.text,
+            range: {
+              start: { x: m.start + 1, y: bufferLineNumber },
+              end: { x: m.end, y: bufferLineNumber },
+            },
+            activate: (_event, caminho) => {
+              void revealPath(caminho).catch(() => {});
+            },
+          })),
+        );
+      },
+    });
     const unicode = new Unicode11Addon();
     term.loadAddon(unicode);
     term.unicode.activeVersion = "11";
@@ -300,6 +334,10 @@ export function TerminalView({
     void canalRef.current
       .onData((bytes, seq) => {
         if (disposed) return;
+        // Alimenta o detector de "rajada de saída seguida de silêncio" que
+        // decide se vale mandar uma notificação — mesmo em segundo plano,
+        // pois é justamente aí que a pessoa não está vendo o texto chegar.
+        recordActivity(sessionId, bytes.length);
         if (!applied) {
           fila.push({ bytes, seq });
           return;

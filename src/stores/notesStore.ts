@@ -17,13 +17,23 @@ export interface Note {
   isMono?: boolean;
 }
 
+export const NOTES_PANEL_WIDTH_MIN = 260;
+export const NOTES_PANEL_WIDTH_MAX = 720;
+const NOTES_PANEL_WIDTH_DEFAULT = 360;
+
+function clampPanelWidth(w: number): number {
+  return Math.min(NOTES_PANEL_WIDTH_MAX, Math.max(NOTES_PANEL_WIDTH_MIN, Math.round(w)));
+}
+
 export interface NotesStore {
   panelOpen: boolean;
+  panelWidth: number;
   notes: Note[];
   activeNoteId: string | null;
 
   togglePanel: () => void;
   setPanelOpen: (open: boolean) => void;
+  setPanelWidth: (width: number) => void;
   createNote: (title?: string, content?: string) => Note;
   selectNote: (id: string) => void;
   updateNote: (id: string, updates: Partial<Pick<Note, "title" | "content" | "isMono">>) => void;
@@ -55,15 +65,24 @@ git status
   isMono: true,
 };
 
-function readStorage(): { notes: Note[]; activeNoteId: string | null; panelOpen: boolean } {
+type PersistedState = {
+  notes: Note[];
+  activeNoteId: string | null;
+  panelOpen: boolean;
+  panelWidth: number;
+};
+
+function readStorage(): PersistedState {
+  const fallback: PersistedState = {
+    notes: [NOTA_INICIAL_DEFAULT],
+    activeNoteId: NOTA_INICIAL_DEFAULT.id,
+    panelOpen: false,
+    panelWidth: NOTES_PANEL_WIDTH_DEFAULT,
+  };
   try {
-    if (typeof localStorage === "undefined") {
-      return { notes: [NOTA_INICIAL_DEFAULT], activeNoteId: NOTA_INICIAL_DEFAULT.id, panelOpen: false };
-    }
+    if (typeof localStorage === "undefined") return fallback;
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return { notes: [NOTA_INICIAL_DEFAULT], activeNoteId: NOTA_INICIAL_DEFAULT.id, panelOpen: false };
-    }
+    if (!raw) return fallback;
     const parsed = JSON.parse(raw);
     const notes: Note[] = Array.isArray(parsed.notes) && parsed.notes.length > 0
       ? parsed.notes
@@ -75,13 +94,17 @@ function readStorage(): { notes: Note[]; activeNoteId: string | null; panelOpen:
       notes,
       activeNoteId,
       panelOpen: typeof parsed.panelOpen === "boolean" ? parsed.panelOpen : false,
+      panelWidth:
+        typeof parsed.panelWidth === "number"
+          ? clampPanelWidth(parsed.panelWidth)
+          : NOTES_PANEL_WIDTH_DEFAULT,
     };
   } catch {
-    return { notes: [NOTA_INICIAL_DEFAULT], activeNoteId: NOTA_INICIAL_DEFAULT.id, panelOpen: false };
+    return fallback;
   }
 }
 
-function writeStorage(state: { notes: Note[]; activeNoteId: string | null; panelOpen: boolean }) {
+function writeStorage(state: PersistedState) {
   try {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -95,13 +118,14 @@ export const useNotesStore = create<NotesStore>((set) => {
 
   return {
     panelOpen: initial.panelOpen,
+    panelWidth: initial.panelWidth,
     notes: initial.notes,
     activeNoteId: initial.activeNoteId,
 
     togglePanel: () => {
       set((s) => {
         const next = !s.panelOpen;
-        writeStorage({ notes: s.notes, activeNoteId: s.activeNoteId, panelOpen: next });
+        writeStorage({ notes: s.notes, activeNoteId: s.activeNoteId, panelOpen: next , panelWidth: s.panelWidth });
         return { panelOpen: next };
       });
     },
@@ -109,8 +133,17 @@ export const useNotesStore = create<NotesStore>((set) => {
     setPanelOpen: (open) => {
       set((s) => {
         if (s.panelOpen === open) return s;
-        writeStorage({ notes: s.notes, activeNoteId: s.activeNoteId, panelOpen: open });
+        writeStorage({ notes: s.notes, activeNoteId: s.activeNoteId, panelOpen: open , panelWidth: s.panelWidth });
         return { panelOpen: open };
+      });
+    },
+
+    setPanelWidth: (width) => {
+      set((s) => {
+        const panelWidth = clampPanelWidth(width);
+        if (panelWidth === s.panelWidth) return s;
+        writeStorage({ notes: s.notes, activeNoteId: s.activeNoteId, panelOpen: s.panelOpen, panelWidth });
+        return { panelWidth };
       });
     },
 
@@ -124,7 +157,7 @@ export const useNotesStore = create<NotesStore>((set) => {
       };
       set((s) => {
         const notes = [nova, ...s.notes];
-        writeStorage({ notes, activeNoteId: nova.id, panelOpen: s.panelOpen });
+        writeStorage({ notes, activeNoteId: nova.id, panelOpen: s.panelOpen , panelWidth: s.panelWidth });
         return { notes, activeNoteId: nova.id };
       });
       return nova;
@@ -133,7 +166,7 @@ export const useNotesStore = create<NotesStore>((set) => {
     selectNote: (id) => {
       set((s) => {
         if (s.activeNoteId === id) return s;
-        writeStorage({ notes: s.notes, activeNoteId: id, panelOpen: s.panelOpen });
+        writeStorage({ notes: s.notes, activeNoteId: id, panelOpen: s.panelOpen , panelWidth: s.panelWidth });
         return { activeNoteId: id };
       });
     },
@@ -141,7 +174,7 @@ export const useNotesStore = create<NotesStore>((set) => {
     updateNote: (id, updates) => {
       set((s) => {
         const notes = s.notes.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n));
-        writeStorage({ notes, activeNoteId: s.activeNoteId, panelOpen: s.panelOpen });
+        writeStorage({ notes, activeNoteId: s.activeNoteId, panelOpen: s.panelOpen , panelWidth: s.panelWidth });
         return { notes };
       });
     },
@@ -157,11 +190,11 @@ export const useNotesStore = create<NotesStore>((set) => {
             updatedAt: Date.now(),
             isMono: true,
           };
-          writeStorage({ notes: [defaultNote], activeNoteId: defaultNote.id, panelOpen: s.panelOpen });
+          writeStorage({ notes: [defaultNote], activeNoteId: defaultNote.id, panelOpen: s.panelOpen , panelWidth: s.panelWidth });
           return { notes: [defaultNote], activeNoteId: defaultNote.id };
         }
         const activeNoteId = s.activeNoteId === id ? notes[0].id : s.activeNoteId;
-        writeStorage({ notes, activeNoteId, panelOpen: s.panelOpen });
+        writeStorage({ notes, activeNoteId, panelOpen: s.panelOpen , panelWidth: s.panelWidth });
         return { notes, activeNoteId };
       });
     },
@@ -180,7 +213,7 @@ export const useNotesStore = create<NotesStore>((set) => {
           }
           return n;
         });
-        writeStorage({ notes, activeNoteId: s.activeNoteId, panelOpen: s.panelOpen });
+        writeStorage({ notes, activeNoteId: s.activeNoteId, panelOpen: s.panelOpen , panelWidth: s.panelWidth });
         return { notes };
       });
     },

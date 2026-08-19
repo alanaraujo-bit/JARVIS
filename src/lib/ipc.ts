@@ -388,6 +388,9 @@ export const configSave = (patch: ConfigPatch) =>
 export const openFolderDialog = () =>
   invoke<string | null>("open_folder_dialog");
 
+/** Ctrl+clique num caminho impresso no terminal: revela no Explorer. */
+export const revealPath = (path: string) => invoke<void>("reveal_path", { path });
+
 /* ------------------------------- IA ------------------------------------ */
 
 export interface AiChatRequest {

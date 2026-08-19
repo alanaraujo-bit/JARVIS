@@ -7,7 +7,7 @@
  * capturar os últimos logs para debugar e manter rascunhos de prompts à mão.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { writeClipboardText } from "../lib/clipboard";
 import { useNotesStore, type Note } from "../stores/notesStore";
 import { Icon } from "./Icon";
@@ -22,9 +22,11 @@ interface NotesPanelProps {
 export function NotesPanel({ onRunCommand, captureContext }: NotesPanelProps) {
   const {
     panelOpen,
+    panelWidth,
     notes,
     activeNoteId,
     togglePanel,
+    setPanelWidth,
     createNote,
     selectNote,
     updateNote,
@@ -35,7 +37,41 @@ export function NotesPanel({ onRunCommand, captureContext }: NotesPanelProps) {
   const [copied, setCopied] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [captured, setCaptured] = useState(false);
+  const [resizing, setResizing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Arrasta pela borda esquerda do painel para redimensionar. O painel fica
+  // à direita da tela, então "arrastar para a esquerda" tem que *aumentar* a
+  // largura — por isso o delta usado é `startX - clientX`, invertido.
+  const handleResizeStart = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startWidth = panelWidth;
+      setResizing(true);
+
+      const onMove = (ev: PointerEvent) => {
+        setPanelWidth(startWidth + (startX - ev.clientX));
+      };
+      const onUp = () => {
+        setResizing(false);
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [panelWidth, setPanelWidth],
+  );
+
+  // Classe no `<body>` durante o arraste: sem isto, passar o cursor por cima
+  // do próprio terminal (iframe/canvas do WebGL) durante o drag troca o
+  // cursor de "resize" para o do conteúdo por baixo, o que parece travado.
+  useEffect(() => {
+    if (!resizing) return;
+    document.body.classList.add("notes-panel-resizing");
+    return () => document.body.classList.remove("notes-panel-resizing");
+  }, [resizing]);
 
   const activeNote = useMemo<Note | undefined>(
     () => notes.find((n) => n.id === activeNoteId) || notes[0],
@@ -113,7 +149,22 @@ export function NotesPanel({ onRunCommand, captureContext }: NotesPanelProps) {
   if (!activeNote) return null;
 
   return (
-    <aside className={`notes-panel ${panelOpen ? "open" : ""}`} aria-hidden={!panelOpen} aria-label="Notas do Vibe Coding">
+    <aside
+      className={`notes-panel ${panelOpen ? "open" : ""}`}
+      aria-hidden={!panelOpen}
+      aria-label="Notas do Vibe Coding"
+      style={panelOpen ? ({ "--notes-panel-width": `${panelWidth}px` } as CSSProperties) : undefined}
+    >
+      {panelOpen && (
+        <div
+          className={`notes-panel-resize-handle ${resizing ? "active" : ""}`}
+          onPointerDown={handleResizeStart}
+          title="Arraste para redimensionar o bloco de notas"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Redimensionar bloco de notas"
+        />
+      )}
       <div className="notes-panel-inner">
         <header className="notes-panel-header">
           <span className="notes-panel-title">

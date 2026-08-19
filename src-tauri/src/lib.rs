@@ -36,6 +36,12 @@ pub fn run() {
     // confiável de ler o clipboard não há colar para as ferramentas de
     // ditado que simulam Ctrl+V.
     builder = builder.plugin(tauri_plugin_clipboard_manager::init());
+    // Notificações nativas do Windows: avisam quando um agente termina ou
+    // para para perguntar algo enquanto o JARVIS não está em primeiro plano.
+    builder = builder.plugin(tauri_plugin_notification::init());
+    // Abrir caminhos (Ctrl+clique num caminho impresso no terminal) e
+    // revelar arquivos no Explorer.
+    builder = builder.plugin(tauri_plugin_opener::init());
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
@@ -70,6 +76,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::clipboard_save_image,
             commands::clipboard_read_image,
+            commands::reveal_path,
             commands::pty_spawn,
             commands::pty_write,
             commands::pty_resize,
