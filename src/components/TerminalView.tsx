@@ -242,8 +242,25 @@ export function TerminalView({
       // (porque o resize é o único gatilho que já força um refresh — ver
       // `syncSize` abaixo). Aqui cobrimos o gatilho de verdade: refresh total
       // toda vez que o atlas muda.
-      webgl.onChangeTextureAtlas(() => term.refresh(0, term.rows - 1));
-      webgl.onAddTextureAtlasCanvas(() => term.refresh(0, term.rows - 1));
+      // O `refresh` síncrono aqui dispara ANTES do frame que efetivamente
+      // usa o atlas novo (o evento chega no meio do desenho do glifo que
+      // causou a troca). Isso deixa uma corrida: o repaint forçado ainda
+      // enxerga coordenadas de textura da geração anterior, então o lixo
+      // sobrevive até o próximo repaint por acaso. Marcamos "pendente" e
+      // forçamos o refresh de novo no primeiro `onRender` seguinte, que só
+      // dispara depois que o frame com o atlas novo já foi para a tela.
+      let atlasTrocouPendente = false;
+      const forcarRefreshPosAtlas = () => {
+        atlasTrocouPendente = true;
+        term.refresh(0, term.rows - 1);
+      };
+      webgl.onChangeTextureAtlas(forcarRefreshPosAtlas);
+      webgl.onAddTextureAtlasCanvas(forcarRefreshPosAtlas);
+      term.onRender(() => {
+        if (!atlasTrocouPendente) return;
+        atlasTrocouPendente = false;
+        term.refresh(0, term.rows - 1);
+      });
       term.loadAddon(webgl);
     } catch {
       /* renderizador DOM é o fallback silencioso */
