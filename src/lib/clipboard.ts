@@ -67,6 +67,23 @@ export async function saveClipboardImage(sessionId?: string): Promise<string | n
   }
 }
 
+/**
+ * Lê de volta um PNG colado, como *data URL* pronta para um `<img src>`.
+ *
+ * É o que alimenta o preview de hover: o terminal mostra "[Image #N]" no
+ * lugar do caminho que colamos, e para "ver a imagem antes de mandar para o
+ * agente" é preciso os bytes de volta — só que agora sob demanda, e não a
+ * cada colagem. `null` cobre tanto a ausência de backend nativo quanto o
+ * caso comum de o PNG ter sumido (limpeza de 24h, usuário apagou a pasta).
+ */
+export async function readClipboardImage(path: string): Promise<string | null> {
+  try {
+    return await invoke<string>("clipboard_read_image", { path });
+  } catch {
+    return null;
+  }
+}
+
 /** O que uma colagem deve fazer, dado o que existe no clipboard. */
 export type PlanoDeColagem =
   | { tipo: "texto"; texto: string }

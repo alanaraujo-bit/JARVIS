@@ -11,11 +11,13 @@ import {
   readClipboardText,
   writeClipboardText,
   saveClipboardImage,
+  readClipboardImage,
   planejarColagem,
   planejarColagemDeEvento,
   type PlanoDeColagem,
 } from "../lib/clipboard";
 import { diffTexto } from "../lib/dictation";
+import { resolverCaminhoDaImagem } from "../lib/imagePreview";
 import { registerTerminal, unregisterTerminal } from "../lib/terminalRegistry";
 import { localTransport, type TermTransport } from "../lib/termTransport";
 import { theme } from "../lib/theme";
@@ -39,6 +41,44 @@ interface Props {
    * para a pessoa não digitar num terminal que não vai reagir.
    */
   readOnly?: boolean;
+}
+
+// Tipos do link customizado extraídos de `Terminal.registerLinkProvider` em
+// vez de importados por nome: `ILink`/`ILinkProvider` são API proposta e o
+// `.d.ts` do xterm não os exporta (só o método público que os usa). Extrair
+// via `Parameters`/`NonNullable` dá o mesmo tipo, sem depender de um nome que
+// a lib não deixa importar.
+type ProvedorDeLinks = Parameters<Terminal["registerLinkProvider"]>[0];
+type LinkDeImagem = NonNullable<
+  Parameters<Parameters<ProvedorDeLinks["provideLinks"]>[1]>[0]
+>[number];
+
+/** Estado do preview que aparece ao passar o mouse (ou clicar) num
+ *  "[Image #N]" do terminal. `x`/`y` são coordenadas de tela (viewport). */
+interface PreviewImagem {
+  x: number;
+  y: number;
+  /** `null` quando não foi possível achar a qual colagem o placeholder se refere. */
+  caminho: string | null;
+  dataUrl: string | null;
+  estado: "carregando" | "pronta" | "indisponivel";
+  /** Fixado por clique: sobrevive ao mouse saindo, só fecha por × ou clique fora. */
+  fixado: boolean;
+}
+
+/** Onde desenhar o painel, com uma folga para não estourar a tela — o
+ *  preview nasce perto do cursor, então perto da borda ele precisa virar
+ *  para o outro lado em vez de ser cortado. */
+function posicaoDoPreview(x: number, y: number): { left: number; top: number } {
+  const LARGURA_MAX = 320;
+  const ALTURA_MAX = 280;
+  const margem = 12;
+  const estourouDireita = x + LARGURA_MAX + margem > window.innerWidth;
+  const estourouBaixo = y + ALTURA_MAX + margem > window.innerHeight;
+  return {
+    left: Math.max(margem, estourouDireita ? x - LARGURA_MAX - 28 : x),
+    top: Math.max(margem, estourouBaixo ? y - ALTURA_MAX - 28 : y),
+  };
 }
 
 let viewSeq = 0;
@@ -90,6 +130,12 @@ export function TerminalView({
   const [dictando, setDictando] = useState(false);
   const [dictado, setDictado] = useState("");
   const dictadoAnteriorRef = useRef("");
+  // Preview de imagem ao passar o mouse (ou clicar) num "[Image #N]" do
+  // terminal — ver a seção "preview de imagem" dentro do efeito principal.
+  // `previewElRef` é só para o clique-fora saber se o clique foi dentro do
+  // próprio painel (senão ele se fecharia ao clicar nele mesmo).
+  const [preview, setPreview] = useState<PreviewImagem | null>(null);
+  const previewElRef = useRef<HTMLDivElement | null>(null);
 
   const fechaDitado = () => {
     dictadoAnteriorRef.current = "";
@@ -341,6 +387,10 @@ export function TerminalView({
     const colarImagem = () => {
       void saveClipboardImage(sessionId).then((caminho) => {
         if (disposed || !caminho) return;
+        imagensColadas.push(caminho);
+        // Teto de segurança: uma sessão de dias a fio não deve acumular
+        // milhares de entradas só para um hover eventual no preview.
+        if (imagensColadas.length > 500) imagensColadas.shift();
         term.paste(caminho);
       });
     };
@@ -363,6 +413,121 @@ export function TerminalView({
         executarPlano(planejarColagem(texto, opcoes));
       });
     };
+
+    /* --------------- preview de imagem ao passar o mouse --------------- */
+    //
+    // O agente (Claude Code e companhia) mostra "[Image #N]" no lugar do
+    // caminho que colamos — é texto que ELE desenha no terminal, e uma vez
+    // recolhido o caminho de verdade não fica em lugar nenhum do buffer para
+    // a gente ler de volta. O que dá para explorar é a ORDEM: cada
+    // "[Image #N]" que aparece na tela, da mais antiga para a mais nova, é
+    // exatamente a N-ésima colagem que ESTE painel fez, na mesma ordem — não
+    // importa como o agente numera por dentro (ele reinicia a contagem a
+    // cada mensagem enviada; aqui não precisamos acompanhar isso, só a
+    // ordem de aparição basta). Por segurança contra scrollback podado ou
+    // `cls`, o casamento é feito **a partir do fim**: a última ocorrência na
+    // tela é sempre a última colagem, a penúltima é a penúltima, e por aí
+    // vai — assim uma colagem antiga que saiu do buffer não desalinha as
+    // mais recentes, que são o caso que de fato importa (conferir a imagem
+    // antes de mandar pro agente).
+    const imagensColadas: string[] = [];
+    const cachePreview = new Map<string, string>();
+
+    /** Lê o buffer inteiro como texto, linha a linha — a única parte impura
+     *  do casamento; o resto mora em `imagePreview.ts`, puro e testável. */
+    const linhasDoBuffer = (): string[] => {
+      const buffer = term.buffer.active;
+      const linhas: string[] = [];
+      for (let i = 0; i < buffer.length; i++) {
+        linhas.push(buffer.getLine(i)?.translateToString(true) ?? "");
+      }
+      return linhas;
+    };
+
+    const resolverCaminho = (y: number, x: number): string | undefined =>
+      resolverCaminhoDaImagem(linhasDoBuffer(), { linha: y - 1, coluna: x }, imagensColadas);
+
+    // Nasce perto do cursor (não embaixo dele) para não tampar o próprio
+    // texto que a pessoa está mirando.
+    const MARGEM_PREVIEW = 18;
+
+    /** `fixar`: hover de passagem (false) só aparece se nada estiver fixado
+     *  ainda; clique (true) sempre mostra e fixa, mesmo trocando de imagem. */
+    const mostrarPreview = (event: MouseEvent, y: number, x: number, fixar: boolean) => {
+      const pos = { x: event.clientX + MARGEM_PREVIEW, y: event.clientY + MARGEM_PREVIEW };
+      const caminho = resolverCaminho(y, x);
+      setPreview((atual) => {
+        if (!fixar && atual?.fixado) return atual; // hover não perturba o que já está fixado
+        if (!caminho) {
+          return { ...pos, caminho: null, dataUrl: null, estado: "indisponivel", fixado: fixar };
+        }
+        const emCache = cachePreview.get(caminho);
+        return {
+          ...pos,
+          caminho,
+          dataUrl: emCache ?? null,
+          estado: emCache ? "pronta" : "carregando",
+          fixado: fixar,
+        };
+      });
+      if (!caminho || cachePreview.has(caminho)) return;
+      void readClipboardImage(caminho).then((dataUrl) => {
+        if (dataUrl) cachePreview.set(caminho, dataUrl);
+        // Se o mouse já foi para outra imagem (ou saiu) enquanto isto
+        // carregava, `atual.caminho` não bate mais e a resposta é descartada
+        // — sem isso, uma leitura lenta poderia pintar por cima do preview
+        // de uma imagem diferente que a pessoa já está olhando agora.
+        setPreview((atual) =>
+          !atual || atual.caminho !== caminho
+            ? atual
+            : { ...atual, dataUrl, estado: dataUrl ? "pronta" : "indisponivel" },
+        );
+      });
+    };
+
+    const esconderPreview = () => {
+      setPreview((atual) => (atual?.fixado ? atual : null));
+    };
+
+    const linkProvider: ProvedorDeLinks = {
+      provideLinks(bufferLineNumber, callback) {
+        const linha = term.buffer.active.getLine(bufferLineNumber - 1);
+        const texto = linha?.translateToString(true) ?? "";
+        if (!texto.includes("[Image #")) {
+          callback(undefined);
+          return;
+        }
+        const encontrados: LinkDeImagem[] = [];
+        for (const m of texto.matchAll(/\[Image #\d+\]/g)) {
+          const x = m.index ?? 0;
+          encontrados.push({
+            range: {
+              start: { x: x + 1, y: bufferLineNumber },
+              end: { x: x + m[0].length, y: bufferLineNumber },
+            },
+            text: m[0],
+            decorations: { pointerCursor: true, underline: true },
+            activate: (ev) => mostrarPreview(ev, bufferLineNumber, x, true),
+            hover: (ev) => mostrarPreview(ev, bufferLineNumber, x, false),
+            leave: () => esconderPreview(),
+          });
+        }
+        callback(encontrados.length ? encontrados : undefined);
+      },
+    };
+    const linkProviderSub = term.registerLinkProvider(linkProvider);
+
+    // Clicar fora fecha um preview fixado — sem isto ele ficaria preso na
+    // tela, cobrindo o terminal, até a próxima imagem ser clicada.
+    const onMouseDownFora = (e: MouseEvent) => {
+      const alvo = e.target as Node;
+      setPreview((atual) => {
+        if (!atual?.fixado) return atual;
+        if (previewElRef.current?.contains(alvo)) return atual;
+        return null;
+      });
+    };
+    document.addEventListener("mousedown", onMouseDownFora, true);
 
     const copiarSelecao = () => {
       const selecao = term.getSelection();
@@ -451,9 +616,14 @@ export function TerminalView({
       dataSub.dispose();
       binarySub.dispose();
       resizeRefreshSub.dispose();
+      linkProviderSub.dispose();
       pararSize?.();
       pararResync?.();
       host.removeEventListener("paste", onPasteHost, true);
+      document.removeEventListener("mousedown", onMouseDownFora, true);
+      // A sessão está trocando (ou o painel está fechando): um preview preso
+      // à sessão anterior não deve sobreviver para o próximo terminal.
+      setPreview(null);
       unlisten?.();
       searchRef.current = null;
       unregisterTerminal(sessionId, term);
@@ -495,6 +665,50 @@ export function TerminalView({
   return (
     <div className="term-wrap">
       <div className="term-host" ref={hostRef} />
+      {preview && (
+        <div
+          className={`term-image-preview${preview.fixado ? " fixado" : ""}`}
+          style={posicaoDoPreview(preview.x, preview.y)}
+          ref={previewElRef}
+        >
+          {preview.estado === "carregando" && (
+            <div className="term-image-preview-status">
+              <span className="term-image-preview-spinner" />
+              Carregando…
+            </div>
+          )}
+          {preview.estado === "indisponivel" && (
+            <div className="term-image-preview-status term-image-preview-erro">
+              <Icon name="warning" size={14} />
+              Imagem indisponível — pode ter sido colada há mais de 24h
+            </div>
+          )}
+          {preview.estado === "pronta" && preview.dataUrl && (
+            <>
+              <img
+                className="term-image-preview-img"
+                src={preview.dataUrl}
+                alt="Prévia da imagem colada no terminal"
+              />
+              <div className="term-image-preview-caption">
+                <span className="term-image-preview-name" title={preview.caminho ?? undefined}>
+                  {preview.caminho?.split(/[\\/]/).pop()}
+                </span>
+                {preview.fixado && (
+                  <button
+                    className="term-image-preview-close"
+                    onClick={() => setPreview(null)}
+                    title="Fechar"
+                    aria-label="Fechar prévia da imagem"
+                  >
+                    <Icon name="close" size={12} />
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
       {busca !== null && (
         <SearchBar
           valor={busca}

@@ -781,3 +781,15 @@ pub fn clipboard_save_image(
     let dir = crate::clipboard_image::pasta_para(cwd.as_deref());
     crate::clipboard_image::salvar_do_clipboard(&dir)
 }
+
+/// Lê de volta um PNG colado, como *data URL*, para o preview de hover no
+/// terminal — passar o mouse no "[Image #N]" que o agente mostra no lugar
+/// do caminho colado.
+///
+/// Só funciona para arquivos com a cara do que `clipboard_save_image` grava;
+/// ver `clipboard_image::ler_como_data_url`. Não é uma leitura de arquivo
+/// genérica disparada por um hover do mouse.
+#[tauri::command(async)]
+pub fn clipboard_read_image(path: String) -> Result<String> {
+    crate::clipboard_image::ler_como_data_url(std::path::Path::new(&path))
+}

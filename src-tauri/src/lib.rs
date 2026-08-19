@@ -69,6 +69,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::clipboard_save_image,
+            commands::clipboard_read_image,
             commands::pty_spawn,
             commands::pty_write,
             commands::pty_resize,

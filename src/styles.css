@@ -2875,6 +2875,109 @@ body {
   transform: scale(0.94);
 }
 
+/* ======================== preview de imagem no hover ==================== */
+/*
+ * Passar o mouse (ou clicar) no "[Image #N]" que o agente desenha no lugar
+ * do caminho colado abre esta prévia — ver a seção "preview de imagem" no
+ * efeito principal de `TerminalView`. `position: fixed` de propósito: o
+ * painel precisa escapar do `overflow: hidden` do `.split-slot` e seguir a
+ * posição do mouse em coordenadas de tela, não do painel.
+ */
+.term-image-preview {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: 320px;
+  background: var(--surface-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  /* Um hover de passagem não deve roubar o mouse de nada por baixo; fixado
+     (clicado) precisa reagir ao botão de fechar e ao clique-fora. */
+  pointer-events: none;
+  animation: jarvis-rise var(--dur-fast) var(--ease-fluid);
+}
+
+.term-image-preview.fixado {
+  pointer-events: auto;
+}
+
+.term-image-preview-img {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  background: repeating-conic-gradient(
+      color-mix(in srgb, var(--text) 6%, transparent) 0% 25%,
+      transparent 0% 50%
+    )
+    50% / 16px 16px;
+}
+
+.term-image-preview-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.term-image-preview-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.term-image-preview-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.term-image-preview-close:hover {
+  background: var(--surface-1);
+  color: var(--text);
+}
+
+.term-image-preview-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.term-image-preview-erro {
+  color: var(--warn);
+}
+
+.term-image-preview-spinner {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: jarvis-spin var(--dur-slow) linear infinite;
+}
+
 .empty-hints {
   display: flex;
   gap: var(--space-7);

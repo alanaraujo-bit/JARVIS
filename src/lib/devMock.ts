@@ -695,6 +695,17 @@ export function installDevMock(): void {
       return `${base}\\.jarvis\\clipboard\\colado-mock.png`;
     },
 
+    /**
+     * Preview de hover. No app de verdade quem lê o PNG de volta é o Rust;
+     * aqui devolvemos um PNG minúsculo de verdade (1×1), só para o painel
+     * de preview ter o que desenhar em dev e no e2e.
+     */
+    clipboard_read_image: (args) => {
+      const { path } = args as unknown as { path?: string };
+      if (!path) throw new Error("caminho vazio");
+      return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    },
+
     ai_cancel: () => null,
   };
 

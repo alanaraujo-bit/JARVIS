@@ -12,6 +12,7 @@
 //! canvas e mandar megabytes de volta pelo IPC. Aqui os bytes nunca saem do
 //! Rust — o que atravessa a ponte é uma string com o caminho.
 
+use base64::Engine as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -188,6 +189,43 @@ fn e_arquivo_colado(caminho: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Mesma checagem de `e_arquivo_colado`, mais a pasta-mãe: só um PNG que este
+/// módulo gravou, dentro de uma pasta chamada `clipboard` (a de sessão, em
+/// `.jarvis/clipboard`, ou a global, em `%APPDATA%/JARVIS/clipboard`).
+///
+/// Existe para o preview de hover no terminal (`ler_como_data_url` abaixo).
+/// Sem essa fronteira, um comando disparado por passar o mouse sobre um texto
+/// viraria uma leitura de arquivo arbitrário — o caminho que chega aqui vem
+/// do front, que por sua vez está tentando reconstruí-lo a partir do que
+/// *ele mesmo* gravou, mas o IPC não tem como provar isso sozinho.
+fn e_elegivel_para_preview(caminho: &Path) -> bool {
+    e_arquivo_colado(caminho)
+        && caminho
+            .parent()
+            .and_then(|p| p.file_name())
+            .map(|n| n == "clipboard")
+            .unwrap_or(false)
+}
+
+/// Lê de volta um PNG colado e devolve como *data URL* pronta para um
+/// `<img src>` — é o que alimenta o preview ao passar o mouse no
+/// "[Image #N]" que o agente mostra no terminal.
+///
+/// Diferente de `salvar_do_clipboard`, aqui os bytes *precisam* atravessar o
+/// IPC: é o front que vai desenhar a prévia. O preço é pago só sob demanda —
+/// um hover é raro perto da frequência de teclas digitadas — e o arquivo já
+/// é um PNG pequeno (um print, não um vídeo).
+pub fn ler_como_data_url(caminho: &Path) -> Result<String> {
+    if !e_elegivel_para_preview(caminho) {
+        return Err(JarvisError::BadPayload(
+            "caminho fora da pasta de colagem".into(),
+        ));
+    }
+    let bytes = fs::read(caminho)?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:image/png;base64,{b64}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,6 +262,49 @@ mod tests {
         assert!(e_arquivo_colado(Path::new(&nome)), "{nome}");
         assert!(!e_arquivo_colado(Path::new("foto-do-usuario.png")));
         assert!(!e_arquivo_colado(Path::new("colado-123.txt")));
+    }
+
+    #[test]
+    fn preview_le_um_png_que_este_modulo_gravou() {
+        let dir = std::env::temp_dir().join(format!("jarvis-preview-ok-{}", uuid::Uuid::new_v4()));
+        let clipboard = dir.join("clipboard");
+        fs::create_dir_all(&clipboard).unwrap();
+        let png = codificar_png(2, 1, &[255, 0, 0, 255, 0, 255, 0, 255]).unwrap();
+        let caminho = clipboard.join(nome_de_arquivo());
+        fs::write(&caminho, &png).unwrap();
+
+        let data_url = ler_como_data_url(&caminho).expect("deveria ler o preview");
+        assert!(data_url.starts_with("data:image/png;base64,"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preview_recusa_arquivo_fora_da_pasta_clipboard() {
+        let dir = std::env::temp_dir().join(format!("jarvis-preview-fora-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let caminho = dir.join(nome_de_arquivo());
+        fs::write(&caminho, b"x").unwrap();
+
+        assert!(ler_como_data_url(&caminho).is_err(), "pasta não se chama clipboard");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preview_recusa_arquivo_que_o_modulo_nao_escreveu() {
+        let dir = std::env::temp_dir().join(format!("jarvis-preview-alheio-{}", uuid::Uuid::new_v4()));
+        let clipboard = dir.join("clipboard");
+        fs::create_dir_all(&clipboard).unwrap();
+        let caminho = clipboard.join("foto-do-usuario.png");
+        fs::write(&caminho, b"x").unwrap();
+
+        assert!(
+            ler_como_data_url(&caminho).is_err(),
+            "nome não segue o padrão colado-*.png"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
